@@ -116,6 +116,15 @@
   .msg.error { color: var(--red); }
   .msg.ok { color: var(--green); }
   .hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+  .detail {
+    display: block;
+    direction: ltr;
+    text-align: left;
+    color: var(--muted);
+    font-size: .75rem;
+    margin-top: 6px;
+    word-break: break-word;
+  }
   .welcome { text-align: center; }
   .welcome h2 { margin: 0 0 6px; font-size: 1.3rem; }
   .welcome p { margin: 0; color: var(--muted); }
@@ -147,6 +156,7 @@
 
     <button class="btn" id="submitBtn" type="button">دخول</button>
     <p class="msg" id="msg" role="status" aria-live="polite"></p>
+    <small class="detail" id="detail"></small>
   </section>
 
   <section class="card welcome" id="welcomeView" hidden>
@@ -235,6 +245,7 @@
     const btn = $("submitBtn");
     btn.disabled = true;
     showMsg("جاري المعالجة…");
+    $("detail").textContent = "";
     try {
       if (mode === "signup") {
         const { data, error } = await db.auth.signUp({
@@ -253,6 +264,7 @@
       }
     } catch (e) {
       showMsg(friendlyError(e), "error");
+      $("detail").textContent = (e && e.message) ? e.message : "";
     } finally {
       btn.disabled = false;
     }
