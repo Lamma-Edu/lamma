@@ -7,24 +7,30 @@
 <style>
   :root {
     --bg: #f3f1ea;
+    --card: #fbfaf6;
     --ink: #2a3a33;
     --muted: #6b7a72;
     --green: #3f7d5c;
+    --green-ink: #ffffff;
     --red: #b5483c;
+    --line: #d9d5c8;
     --panel: #ebe8df;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #17201b;
+      --card: #1d2922;
       --ink: #e8eee9;
       --muted: #9fb0a6;
       --green: #6fbf93;
+      --green-ink: #10281c;
       --red: #e0806f;
+      --line: #33443a;
       --panel: #202c25;
     }
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { min-height: 100%; margin: 0; }
   body {
     background: var(--bg);
     color: var(--ink);
@@ -33,84 +39,235 @@
     place-items: center;
     padding: 24px;
   }
-  main { text-align: center; max-width: 420px; }
+  main { width: 100%; max-width: 400px; text-align: center; }
   h1 {
-    font-size: clamp(3.5rem, 14vw, 5.5rem);
-    margin: 0 0 8px;
+    font-size: clamp(3.2rem, 13vw, 4.8rem);
+    margin: 0 0 4px;
     color: var(--green);
     font-weight: 700;
     line-height: 1.2;
   }
-  p { margin: 0 0 40px; font-size: 1.1rem; color: var(--muted); }
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
+  .tagline { margin: 0 0 28px; color: var(--muted); font-size: 1.05rem; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+    text-align: right;
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
     background: var(--panel);
-    padding: 12px 22px;
-    border-radius: 999px;
-    font-size: 1rem;
+    padding: 5px;
+    border-radius: 12px;
+    margin-bottom: 20px;
   }
-  .dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--muted);
-  }
-  .status.loading .dot { animation: pulse 1.2s ease-in-out infinite; }
-  .status.ok .dot { background: var(--green); }
-  .status.fail .dot { background: var(--red); }
-  @keyframes pulse { 50% { opacity: .25; } }
-  @media (prefers-reduced-motion: reduce) {
-    .status.loading .dot { animation: none; }
-  }
-  #detail {
-    display: block;
-    margin-top: 16px;
-    font-size: .8rem;
+  .tab {
+    border: 0;
+    background: transparent;
     color: var(--muted);
-    direction: ltr;
-    word-break: break-word;
+    font: inherit;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
   }
+  .tab[aria-selected="true"] {
+    background: var(--card);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  label { display: block; font-size: .9rem; margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    font: inherit;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  input[type="email"], input[type="password"] { direction: ltr; text-align: left; }
+  input:focus-visible, .tab:focus-visible, .btn:focus-visible {
+    outline: 2px solid var(--green);
+    outline-offset: 2px;
+  }
+  .btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 13px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--green);
+    color: var(--green-ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: .6; cursor: wait; }
+  .btn.secondary {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .msg { min-height: 1.4em; margin: 14px 0 0; font-size: .92rem; }
+  .msg.error { color: var(--red); }
+  .msg.ok { color: var(--green); }
+  .hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+  .welcome { text-align: center; }
+  .welcome h2 { margin: 0 0 6px; font-size: 1.3rem; }
+  .welcome p { margin: 0; color: var(--muted); }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <h1>لمّة</h1>
-  <p>منصة تعليمية سودانية — قريباً</p>
-  <div id="status" class="status loading" role="status">
-    <span class="dot"></span>
-    <span id="msg">جاري الاتصال بالخادم…</span>
-  </div>
-  <small id="detail"></small>
+  <p class="tagline">منصة تعليمية سودانية — قريباً</p>
+
+  <section class="card" id="authView">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabLogin" aria-selected="true" type="button">تسجيل الدخول</button>
+      <button class="tab" role="tab" id="tabSignup" aria-selected="false" type="button">إنشاء حساب</button>
+    </div>
+
+    <div id="nameRow" hidden>
+      <label for="fullName">الاسم الكامل</label>
+      <input id="fullName" type="text" autocomplete="name">
+    </div>
+
+    <label for="email">البريد الإلكتروني</label>
+    <input id="email" type="email" autocomplete="email" inputmode="email">
+
+    <label for="password">كلمة المرور</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <div class="hint" id="pwHint" hidden>8 أحرف على الأقل</div>
+
+    <button class="btn" id="submitBtn" type="button">دخول</button>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="card welcome" id="welcomeView" hidden>
+    <h2 id="welcomeName"></h2>
+    <p>تم تسجيل دخولك بنجاح.</p>
+    <button class="btn secondary" id="logoutBtn" type="button">تسجيل الخروج</button>
+  </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // These two values are public and safe to keep here.
-  // Never put a secret key (sb_secret_ or service_role) in this file.
+  // Public values only. Never put a secret key (sb_secret_ or service_role) here.
   const SUPABASE_URL = "https://abdnfozkxoexcivplhcr.supabase.co";
   const SUPABASE_KEY = "sb_publishable_PI3MB7MGuXuuXIXBEFI7ew_3MSZgiHd";
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const box = document.getElementById("status");
-  const msg = document.getElementById("msg");
-  const detail = document.getElementById("detail");
+  const $ = (id) => document.getElementById(id);
+  let mode = "login";
 
-  async function checkConnection() {
+  function setMode(next) {
+    mode = next;
+    const signup = mode === "signup";
+    $("tabLogin").setAttribute("aria-selected", String(!signup));
+    $("tabSignup").setAttribute("aria-selected", String(signup));
+    $("nameRow").hidden = !signup;
+    $("pwHint").hidden = !signup;
+    $("password").autocomplete = signup ? "new-password" : "current-password";
+    $("submitBtn").textContent = signup ? "إنشاء الحساب" : "دخول";
+    showMsg("");
+  }
+
+  function showMsg(text, type) {
+    const el = $("msg");
+    el.textContent = text;
+    el.className = "msg" + (type ? " " + type : "");
+  }
+
+  function friendlyError(err) {
+    const m = ((err && err.message) || "").toLowerCase();
+    if (m.includes("invalid login")) return "البريد أو كلمة المرور غير صحيحة.";
+    if (m.includes("email not confirmed")) return "لم يتم تأكيد بريدك بعد. افتح رسالة التأكيد في بريدك.";
+    if (m.includes("already registered")) return "هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.";
+    if (m.includes("rate limit") || m.includes("too many")) return "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة.";
+    if (m.includes("password")) return "كلمة المرور ضعيفة. استخدم 8 أحرف على الأقل.";
+    if (m.includes("fetch") || m.includes("network")) return "تعذّر الاتصال بالخادم. تحقق من الإنترنت.";
+    return "حدث خطأ. أعد المحاولة بعد قليل.";
+  }
+
+  // Make sure the signed-in user has a row in "profiles".
+  async function ensureProfile(user) {
+    const metaName = (user.user_metadata && user.user_metadata.full_name) || "";
     try {
-      const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-      const { error } = await db
-        .from("subjects")
-        .select("*", { count: "exact", head: true });
+      const { data, error } = await db
+        .from("profiles").select("id, full_name").eq("id", user.id).maybeSingle();
       if (error) throw error;
-      box.className = "status ok";
-      msg.textContent = "متصل بالخادم";
+      if (data) return data.full_name || metaName;
+      const ins = await db.from("profiles")
+        .insert({ id: user.id, full_name: metaName }).select("full_name").maybeSingle();
+      if (ins.error) throw ins.error;
+      return (ins.data && ins.data.full_name) || metaName;
     } catch (e) {
-      box.className = "status fail";
-      msg.textContent = "تعذّر الاتصال بالخادم";
-      detail.textContent = (e && e.message) ? e.message : String(e);
+      console.warn("profile check failed:", e && e.message);
+      return metaName;
     }
   }
 
-  checkConnection();
+  async function render(session) {
+    const signedIn = !!(session && session.user);
+    $("authView").hidden = signedIn;
+    $("welcomeView").hidden = !signedIn;
+    if (signedIn) {
+      const name = await ensureProfile(session.user);
+      $("welcomeName").textContent = name ? "أهلاً " + name : "أهلاً بك";
+    }
+  }
+
+  async function submit() {
+    const email = $("email").value.trim();
+    const password = $("password").value;
+    const fullName = $("fullName").value.trim();
+
+    if (!email || !password) return showMsg("أدخل البريد وكلمة المرور.", "error");
+    if (mode === "signup") {
+      if (!fullName) return showMsg("أدخل اسمك الكامل.", "error");
+      if (password.length < 8) return showMsg("كلمة المرور يجب ألا تقل عن 8 أحرف.", "error");
+    }
+
+    const btn = $("submitBtn");
+    btn.disabled = true;
+    showMsg("جاري المعالجة…");
+    try {
+      if (mode === "signup") {
+        const { data, error } = await db.auth.signUp({
+          email, password, options: { data: { full_name: fullName } }
+        });
+        if (error) throw error;
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          return showMsg("هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.", "error");
+        }
+        if (!data.session) {
+          showMsg("تم إنشاء الحساب. افتح بريدك واضغط رابط التأكيد، ثم سجّل الدخول.", "ok");
+        }
+      } else {
+        const { error } = await db.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (e) {
+      showMsg(friendlyError(e), "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  $("tabLogin").addEventListener("click", () => setMode("login"));
+  $("tabSignup").addEventListener("click", () => setMode("signup"));
+  $("submitBtn").addEventListener("click", submit);
+  $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  $("logoutBtn").addEventListener("click", async () => { await db.auth.signOut(); });
+
+  db.auth.onAuthStateChange((_event, session) => { render(session); });
+  db.auth.getSession().then(({ data }) => render(data.session));
 </script>
 </body>
 </html>
