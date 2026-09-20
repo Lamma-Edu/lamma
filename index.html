@@ -36,18 +36,21 @@
     color: var(--ink);
     font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
     display: grid;
-    place-items: center;
-    padding: 24px;
+    place-items: start center;
+    padding: 24px 16px 48px;
   }
   main { width: 100%; max-width: 400px; text-align: center; }
+  main.wide { max-width: 760px; }
   h1 {
-    font-size: clamp(3.2rem, 13vw, 4.8rem);
-    margin: 0 0 4px;
+    font-size: clamp(3rem, 12vw, 4.4rem);
+    margin: 8px 0 4px;
     color: var(--green);
     font-weight: 700;
     line-height: 1.2;
   }
-  .tagline { margin: 0 0 28px; color: var(--muted); font-size: 1.05rem; }
+  .tagline { margin: 0 0 24px; color: var(--muted); font-size: 1.05rem; }
+  h2 { margin: 0 0 12px; font-size: 1.25rem; }
+  h3 { margin: 8px 0 0; font-size: 1.02rem; }
 
   .card {
     background: var(--card);
@@ -56,15 +59,16 @@
     padding: 22px;
     text-align: right;
   }
-  .tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
+  .card + .card, .card + div { margin-top: 14px; }
+  .inner { margin-bottom: 18px; }
+  .tabs, .tabbar {
     background: var(--panel);
     padding: 5px;
     border-radius: 12px;
-    margin-bottom: 20px;
   }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 20px; }
+  .tabbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+  .tabbar .tab { flex: 1 1 auto; }
   .tab {
     border: 0;
     background: transparent;
@@ -74,14 +78,9 @@
     border-radius: 8px;
     cursor: pointer;
   }
-  .tab[aria-selected="true"] {
-    background: var(--card);
-    color: var(--ink);
-    font-weight: 600;
-  }
+  .tab[aria-selected="true"] { background: var(--card); color: var(--ink); font-weight: 600; }
   label { display: block; font-size: .9rem; margin: 14px 0 6px; }
-  input {
-    width: 100%;
+  input, select, textarea {
     font: inherit;
     padding: 12px 14px;
     border: 1px solid var(--line);
@@ -89,8 +88,13 @@
     background: var(--bg);
     color: var(--ink);
   }
+  input[type="text"], input[type="email"], input[type="password"], textarea { width: 100%; }
+  textarea { min-height: 110px; resize: vertical; margin-top: 8px; }
   input[type="email"], input[type="password"] { direction: ltr; text-align: left; }
-  input:focus-visible, .tab:focus-visible, .btn:focus-visible {
+  input.num { width: 90px; text-align: center; padding: 8px; }
+  select { padding: 9px 10px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible,
+  .tab:focus-visible, .btn:focus-visible, .linkbtn:focus-visible {
     outline: 2px solid var(--green);
     outline-offset: 2px;
   }
@@ -106,36 +110,53 @@
     font-weight: 600;
     cursor: pointer;
   }
+  .btn.small { width: auto; margin-top: 0; padding: 8px 16px; }
   .btn:disabled { opacity: .6; cursor: wait; }
-  .btn.secondary {
-    background: transparent;
-    color: var(--ink);
-    border: 1px solid var(--line);
+  .btn.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn.ghost-red { background: transparent; color: var(--red); border: 1px solid var(--red); }
+  .linkbtn {
+    background: none; border: 0; color: var(--green); font: inherit;
+    cursor: pointer; padding: 8px 0; text-decoration: underline;
   }
   .msg { min-height: 1.4em; margin: 14px 0 0; font-size: .92rem; }
   .msg.error { color: var(--red); }
   .msg.ok { color: var(--green); }
   .hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
   .detail {
-    display: block;
-    direction: ltr;
-    text-align: left;
-    color: var(--muted);
-    font-size: .75rem;
-    margin-top: 6px;
-    word-break: break-word;
+    display: block; direction: ltr; text-align: left; color: var(--muted);
+    font-size: .75rem; margin-top: 6px; word-break: break-word;
   }
-  .welcome { text-align: center; }
-  .welcome h2 { margin: 0 0 6px; font-size: 1.3rem; }
-  .welcome p { margin: 0; color: var(--muted); }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .ltr { direction: ltr; text-align: left; }
+
+  .welcome { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .welcome h2 { margin: 0; }
+  .welcome .grow { flex: 1 1 200px; }
+  .badge {
+    display: inline-block; padding: 3px 12px; border-radius: 999px;
+    background: var(--panel); color: var(--ink); font-size: .8rem;
+  }
+  .badge.alt { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .row {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .grow { flex: 1 1 200px; min-width: 0; }
+  .item { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item p { white-space: pre-wrap; margin: 8px 0; }
+  .item .reply { color: var(--green); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<main>
+<main id="main">
   <h1>لمّة</h1>
   <p class="tagline">منصة تعليمية سودانية — قريباً</p>
 
+  <!-- تسجيل الدخول وإنشاء حساب -->
   <section class="card" id="authView">
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tabLogin" aria-selected="true" type="button">تسجيل الدخول</button>
@@ -157,12 +178,44 @@
     <button class="btn" id="submitBtn" type="button">دخول</button>
     <p class="msg" id="msg" role="status" aria-live="polite"></p>
     <small class="detail" id="detail"></small>
+    <button class="linkbtn" id="resendBtn" type="button" hidden>إعادة إرسال رسالة التأكيد</button>
+    <div><button class="linkbtn" id="forgotLink" type="button">نسيت كلمة المرور؟</button></div>
   </section>
 
-  <section class="card welcome" id="welcomeView" hidden>
-    <h2 id="welcomeName"></h2>
-    <p>تم تسجيل دخولك بنجاح.</p>
-    <button class="btn secondary" id="logoutBtn" type="button">تسجيل الخروج</button>
+  <!-- استعادة كلمة المرور -->
+  <section class="card" id="forgotView" hidden>
+    <h2>استعادة كلمة المرور</h2>
+    <label for="fEmail">البريد الإلكتروني</label>
+    <input id="fEmail" type="email" autocomplete="email" inputmode="email">
+    <button class="btn" id="fSend" type="button">إرسال رابط الاستعادة</button>
+    <p class="msg" id="fMsg" role="status" aria-live="polite"></p>
+    <button class="linkbtn" id="fBack" type="button">العودة إلى تسجيل الدخول</button>
+  </section>
+
+  <!-- كلمة مرور جديدة -->
+  <section class="card" id="recoveryView" hidden>
+    <h2>كلمة مرور جديدة</h2>
+    <label for="rPass">كلمة المرور الجديدة</label>
+    <input id="rPass" type="password" autocomplete="new-password">
+    <label for="rPass2">أعد كتابتها</label>
+    <input id="rPass2" type="password" autocomplete="new-password">
+    <div class="hint">8 أحرف على الأقل</div>
+    <button class="btn" id="rSave" type="button">حفظ</button>
+    <p class="msg" id="rMsg" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- بعد الدخول -->
+  <section id="appView" hidden>
+    <div class="card welcome">
+      <div class="grow">
+        <h2 id="welcomeName"></h2>
+        <span class="badge" id="roleBadge"></span>
+      </div>
+      <button class="btn secondary small" id="logoutBtn" type="button">تسجيل الخروج</button>
+    </div>
+    <div class="tabbar" id="tabBar" role="tablist"></div>
+    <p class="msg" id="panelMsg" role="status" aria-live="polite"></p>
+    <div class="card" id="tabBody"></div>
   </section>
 </main>
 
@@ -171,11 +224,93 @@
   // Public values only. Never put a secret key (sb_secret_ or service_role) here.
   const SUPABASE_URL = "https://abdnfozkxoexcivplhcr.supabase.co";
   const SUPABASE_KEY = "sb_publishable_PI3MB7MGuXuuXIXBEFI7ew_3MSZgiHd";
+
+  // Read link errors / recovery flag BEFORE the client touches the URL.
+  let recoveryMode = location.hash.includes("type=recovery");
+  const hashErrorCode = (function () {
+    if (!location.hash || location.hash.length < 2) return null;
+    const p = new URLSearchParams(location.hash.slice(1));
+    if (!p.get("error") && !p.get("error_code")) return null;
+    const code = p.get("error_code") || p.get("error");
+    history.replaceState(null, "", location.pathname + location.search);
+    return code;
+  })();
+
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
   const $ = (id) => document.getElementById(id);
-  let mode = "login";
 
+  // ---------- helpers ----------
+  function el(tag, props, ...kids) {
+    const e = document.createElement(tag);
+    if (props) {
+      for (const [k, v] of Object.entries(props)) {
+        if (k === "class") e.className = v;
+        else e.setAttribute(k, v);
+      }
+    }
+    for (const kid of kids.flat()) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      e.append(kid.nodeType ? kid : String(kid));
+    }
+    return e;
+  }
+  function setMsg(id, text, type) {
+    const m = $(id);
+    m.textContent = text;
+    m.className = "msg" + (type ? " " + type : "");
+  }
+  const showMsg = (t, type) => setMsg("msg", t, type);
+  const notify = (t, type) => setMsg("panelMsg", t, type);
+  function show(id) {
+    ["authView", "forgotView", "recoveryView", "appView"].forEach((v) => { $(v).hidden = v !== id; });
+    $("main").classList.toggle("wide", id === "appView");
+  }
+  function fmtDate(d) { return new Date(d).toLocaleDateString("ar-EG"); }
+
+  const ROLE_LABEL = {
+    founder: "المؤسس", chief: "مشرف رئيسي", technical: "مشرف فني",
+    assistant: "مشرف مساعد", student: "طالب"
+  };
+  const CAT_LABEL = {
+    lessons: "المواد والدروس", teaching: "طريقة التدريس", student_experience: "تجربة الطالب",
+    technical: "الجانب التقني", supervisors: "بيئة عمل المشرفين", other: "أخرى"
+  };
+  const STATUS_LABEL = {
+    new: "جديد", reviewing: "قيد الدراسة", accepted: "مقبول", rejected: "مرفوض", done: "نُفِّذ"
+  };
+  const REQ_STATUS = { pending: "بانتظار قرارك", approved: "مقبول", rejected: "مرفوض" };
+
+  function friendlyError(err) {
+    const m = ((err && err.message) || "").toLowerCase();
+    if (m.includes("invalid login")) return "البريد أو كلمة المرور غير صحيحة.";
+    if (m.includes("email not confirmed")) return "لم يتم تأكيد بريدك بعد. افتح رسالة التأكيد، أو اطلب إعادة إرسالها.";
+    if (m.includes("already registered")) return "هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.";
+    if (m.includes("security purposes") || m.includes("rate limit") || m.includes("too many")) return "انتظر دقيقة ثم أعد المحاولة.";
+    if (m.includes("password")) return "كلمة المرور ضعيفة. استخدم 8 أحرف على الأقل.";
+    if (m.includes("expired") || m.includes("invalid")) return "انتهت صلاحية الرابط أو سبق استخدامه.";
+    if (m.includes("fetch") || m.includes("network")) return "تعذّر الاتصال بالخادم. تحقق من الإنترنت.";
+    return "حدث خطأ. أعد المحاولة بعد قليل.";
+  }
+  function rpcError(err) {
+    const m = (err && err.message) || "";
+    const map = {
+      GLOBAL_LIMIT: "وصلت المنصة إلى الحد الأقصى لهذا المنصب.",
+      PERSONAL_LIMIT: "وصلت إلى الحد المسموح لك من التعيينات.",
+      NOT_ALLOWED: "ليس لديك صلاحية لهذا الإجراء.",
+      TARGET_NOT_STUDENT: "يمكن تعيين الطلاب فقط.",
+      TARGET_NOT_FOUND: "الحساب غير موجود.",
+      BAD_ROLE: "صفة غير صحيحة.",
+      REQUEST_NOT_FOUND: "الطلب غير موجود أو تم البت فيه.",
+      UNKNOWN_LIMIT: "حد غير معروف.",
+      BAD_STATUS: "حالة غير صحيحة.",
+      NOT_FOUND: "العنصر غير موجود."
+    };
+    for (const k of Object.keys(map)) if (m.includes(k)) return map[k];
+    return "تعذّر تنفيذ الإجراء. أعد المحاولة.";
+  }
+
+  // ---------- تسجيل الدخول ----------
+  let mode = "login";
   function setMode(next) {
     mode = next;
     const signup = mode === "signup";
@@ -185,50 +320,9 @@
     $("pwHint").hidden = !signup;
     $("password").autocomplete = signup ? "new-password" : "current-password";
     $("submitBtn").textContent = signup ? "إنشاء الحساب" : "دخول";
+    $("resendBtn").hidden = true;
+    $("detail").textContent = "";
     showMsg("");
-  }
-
-  function showMsg(text, type) {
-    const el = $("msg");
-    el.textContent = text;
-    el.className = "msg" + (type ? " " + type : "");
-  }
-
-  function friendlyError(err) {
-    const m = ((err && err.message) || "").toLowerCase();
-    if (m.includes("invalid login")) return "البريد أو كلمة المرور غير صحيحة.";
-    if (m.includes("email not confirmed")) return "لم يتم تأكيد بريدك بعد. افتح رسالة التأكيد في بريدك.";
-    if (m.includes("already registered")) return "هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.";
-    if (m.includes("rate limit") || m.includes("too many")) return "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة.";
-    if (m.includes("password")) return "كلمة المرور ضعيفة. استخدم 8 أحرف على الأقل.";
-    if (m.includes("fetch") || m.includes("network")) return "تعذّر الاتصال بالخادم. تحقق من الإنترنت.";
-    return "حدث خطأ. أعد المحاولة بعد قليل.";
-  }
-
-  // The "profiles" row is created by the database when the account is created.
-  // Here we only read the name from it.
-  async function ensureProfile(user) {
-    const metaName = (user.user_metadata && user.user_metadata.full_name) || "";
-    try {
-      const { data, error } = await db
-        .from("profiles").select("id, full_name").eq("id", user.id).maybeSingle();
-      if (error) throw error;
-      return (data && data.full_name) || metaName;
-    } catch (e) {
-      console.warn("profile check failed:", e && e.message);
-      return metaName;
-    }
-  }
-
-  async function render(session) {
-    const signedIn = !!(session && session.user);
-    $("authView").hidden = signedIn;
-    $("welcomeView").hidden = !signedIn;
-    if (signedIn) {
-      const name = await ensureProfile(session.user);
-      const firstName = (name || "").trim().split(/\s+/)[0];
-      $("welcomeName").textContent = firstName ? "أهلاً " + firstName : "أهلاً بك";
-    }
   }
 
   async function submit() {
@@ -246,17 +340,20 @@
     btn.disabled = true;
     showMsg("جاري المعالجة…");
     $("detail").textContent = "";
+    $("resendBtn").hidden = true;
     try {
       if (mode === "signup") {
         const { data, error } = await db.auth.signUp({
-          email, password, options: { data: { full_name: fullName } }
+          email, password,
+          options: { data: { full_name: fullName }, emailRedirectTo: location.origin }
         });
         if (error) throw error;
         if (data.user && data.user.identities && data.user.identities.length === 0) {
           return showMsg("هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.", "error");
         }
         if (!data.session) {
-          showMsg("تم إنشاء الحساب. افتح بريدك واضغط رابط التأكيد، ثم سجّل الدخول.", "ok");
+          showMsg("تم إنشاء الحساب. افتح بريدك واضغط رابط التأكيد خلال ساعة، ثم سجّل الدخول.", "ok");
+          $("resendBtn").hidden = false;
         }
       } else {
         const { error } = await db.auth.signInWithPassword({ email, password });
@@ -265,6 +362,7 @@
     } catch (e) {
       showMsg(friendlyError(e), "error");
       $("detail").textContent = (e && e.message) ? e.message : "";
+      if (((e && e.message) || "").toLowerCase().includes("not confirmed")) $("resendBtn").hidden = false;
     } finally {
       btn.disabled = false;
     }
@@ -274,10 +372,302 @@
   $("tabSignup").addEventListener("click", () => setMode("signup"));
   $("submitBtn").addEventListener("click", submit);
   $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+
+  $("resendBtn").addEventListener("click", async () => {
+    const email = $("email").value.trim();
+    if (!email) return showMsg("اكتب بريدك في الخانة أولاً.", "error");
+    const { error } = await db.auth.resend({ type: "signup", email, options: { emailRedirectTo: location.origin } });
+    if (error) return showMsg(friendlyError(error), "error");
+    showMsg("أُرسلت رسالة تأكيد جديدة. افتح بريدك.", "ok");
+  });
+
+  // ---------- نسيت كلمة المرور ----------
+  $("forgotLink").addEventListener("click", () => { $("fEmail").value = $("email").value; setMsg("fMsg", ""); show("forgotView"); });
+  $("fBack").addEventListener("click", () => show("authView"));
+  $("fSend").addEventListener("click", async () => {
+    const email = $("fEmail").value.trim();
+    if (!email) return setMsg("fMsg", "اكتب بريدك.", "error");
+    $("fSend").disabled = true;
+    const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+    $("fSend").disabled = false;
+    if (error) return setMsg("fMsg", friendlyError(error), "error");
+    setMsg("fMsg", "إن كان البريد مسجّلاً لدينا فستصلك رسالة فيها رابط الاستعادة.", "ok");
+  });
+
+  $("rSave").addEventListener("click", async () => {
+    const a = $("rPass").value, b = $("rPass2").value;
+    if (a.length < 8) return setMsg("rMsg", "كلمة المرور يجب ألا تقل عن 8 أحرف.", "error");
+    if (a !== b) return setMsg("rMsg", "الكلمتان غير متطابقتين.", "error");
+    $("rSave").disabled = true;
+    const { error } = await db.auth.updateUser({ password: a });
+    $("rSave").disabled = false;
+    if (error) return setMsg("rMsg", friendlyError(error), "error");
+    recoveryMode = false;
+    const { data } = await db.auth.getSession();
+    if (data.session) { shownUser = null; route(data.session); } else show("authView");
+  });
+
+  // ---------- لوحة المستخدم ----------
+  let reloadTab = () => {};
+
+  function buildTabs(defs) {
+    const bar = $("tabBar"), body = $("tabBody");
+    bar.replaceChildren();
+    let current = null;
+    async function select(d) {
+      current = d;
+      defs.forEach((x) => x.btn.setAttribute("aria-selected", String(x === d)));
+      notify("");
+      body.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
+      try {
+        body.replaceChildren(await d.render());
+      } catch (e) {
+        body.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة."));
+      }
+    }
+    defs.forEach((d) => {
+      d.btn = el("button", { class: "tab", role: "tab", type: "button", "aria-selected": "false" }, d.label);
+      d.btn.addEventListener("click", () => select(d));
+      bar.append(d.btn);
+    });
+    reloadTab = () => current && select(current);
+    if (defs.length) select(defs[0]);
+  }
+
+  // --- المؤسس: الحسابات ---
+  async function accountsTab() {
+    const [acc, lim] = await Promise.all([
+      db.rpc("founder_list_accounts"),
+      db.from("platform_limits").select("key,value")
+    ]);
+    if (acc.error) throw acc.error;
+    const limits = Object.fromEntries((lim.data || []).map((l) => [l.key, l.value]));
+    const count = (r) => acc.data.filter((a) => a.role === r).length;
+    const wrap = el("div");
+    wrap.append(el("p", { class: "muted" },
+      "رئيسيون " + count("chief") + "/" + (limits.max_chief ?? "؟") +
+      " · فنيون " + count("technical") + "/" + (limits.max_technical ?? "؟") +
+      " · مساعدون " + count("assistant") + "/" + (limits.max_assistant ?? "؟") +
+      " · طلاب " + count("student")));
+
+    acc.data.forEach((a) => {
+      const isFounder = a.role === "founder";
+      const row = el("div", { class: "row" },
+        el("div", { class: "grow" },
+          el("strong", null, a.full_name || "—"),
+          el("div", { class: "muted ltr" }, a.email || "")),
+        el("span", { class: "badge" }, ROLE_LABEL[a.role] || a.role));
+      if (!isFounder) {
+        const sel = el("select", null,
+          ...["student", "assistant", "technical", "chief"].map((r) => el("option", { value: r }, ROLE_LABEL[r])));
+        sel.value = a.role;
+        const btn = el("button", { class: "btn small", type: "button" }, "حفظ");
+        btn.addEventListener("click", async () => {
+          const r = sel.value;
+          if (r === a.role) return notify("لم يتغير شيء.", "");
+          if (r === "student" && !confirm("إعفاء هذا المشرف وإعادته طالباً؟")) return;
+          btn.disabled = true;
+          const res = r === "student"
+            ? await db.rpc("remove_supervisor", { p_target: a.id })
+            : await db.rpc("appoint_supervisor", { p_target: a.id, p_role: r });
+          btn.disabled = false;
+          if (res.error) return notify(rpcError(res.error), "error");
+          notify("تم الحفظ.", "ok");
+          reloadTab();
+        });
+        row.append(sel, btn);
+      }
+      wrap.append(row);
+    });
+    return wrap;
+  }
+
+  // --- المؤسس: الحدود ---
+  async function limitsTab() {
+    const { data, error } = await db.from("platform_limits").select("key,value,note").order("key");
+    if (error) throw error;
+    const wrap = el("div");
+    data.forEach((l) => {
+      const inp = el("input", { type: "number", min: "0", value: String(l.value), class: "num" });
+      const btn = el("button", { class: "btn small", type: "button" }, "حفظ");
+      btn.addEventListener("click", async () => {
+        const v = parseInt(inp.value, 10);
+        if (Number.isNaN(v) || v < 0) return notify("أدخل رقماً صحيحاً.", "error");
+        btn.disabled = true;
+        const { error: e } = await db.rpc("set_limit", { p_key: l.key, p_value: v });
+        btn.disabled = false;
+        notify(e ? rpcError(e) : "تم الحفظ.", e ? "error" : "ok");
+      });
+      wrap.append(el("div", { class: "row" },
+        el("div", { class: "grow" }, el("div", null, l.note || l.key), el("div", { class: "muted ltr" }, l.key)),
+        inp, btn));
+    });
+    return wrap;
+  }
+
+  // --- المؤسس: طلبات التعيين ---
+  async function requestsTab() {
+    const { data, error } = await db.rpc("founder_list_requests");
+    if (error) throw error;
+    const wrap = el("div");
+    if (!data.length) return el("p", { class: "muted" }, "لا توجد طلبات تعيين.");
+    data.forEach((r) => {
+      const item = el("div", { class: "item" },
+        el("div", { class: "meta" },
+          el("span", { class: "badge" }, ROLE_LABEL[r.new_role] || r.new_role),
+          el("span", { class: "badge alt" }, REQ_STATUS[r.status] || r.status),
+          el("span", { class: "muted" }, fmtDate(r.created_at))),
+        el("p", null, (r.requester_name || "—") + " يقترح تعيين " + (r.target_name || "—") +
+          " (" + (r.target_email || "") + ") بصفة " + (ROLE_LABEL[r.new_role] || r.new_role) + "."),
+        r.note ? el("p", { class: "muted" }, r.note) : null);
+      if (r.status === "pending") {
+        const ok = el("button", { class: "btn small", type: "button" }, "قبول");
+        const no = el("button", { class: "btn small ghost-red", type: "button" }, "رفض");
+        const act = (approve) => async () => {
+          ok.disabled = no.disabled = true;
+          const { error: e } = await db.rpc("decide_request", { p_id: r.id, p_approve: approve });
+          if (e) { ok.disabled = no.disabled = false; return notify(rpcError(e), "error"); }
+          notify(approve ? "تم القبول والتعيين." : "تم الرفض.", "ok");
+          reloadTab();
+        };
+        ok.addEventListener("click", act(true));
+        no.addEventListener("click", act(false));
+        item.append(el("div", { class: "row" }, ok, no));
+      }
+      wrap.append(item);
+    });
+    return wrap;
+  }
+
+  // --- الاقتراحات (عرض عنصر) ---
+  function suggestionItem(s, founderMode) {
+    const item = el("div", { class: "item" },
+      el("div", { class: "meta" },
+        el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
+        el("span", { class: "badge alt" }, STATUS_LABEL[s.status] || s.status),
+        el("span", { class: "muted" }, fmtDate(s.created_at) + (founderMode && s.author_name ? " — " + s.author_name : ""))),
+      el("h3", null, s.title),
+      el("p", null, s.body));
+    if (!founderMode && s.response) item.append(el("p", { class: "reply" }, "رد المؤسس: " + s.response));
+    if (founderMode) {
+      const st = el("select", null, ...Object.entries(STATUS_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+      st.value = s.status;
+      const rp = el("textarea", { placeholder: "رد على صاحب الاقتراح (اختياري)", maxlength: "1000" });
+      rp.value = s.response || "";
+      const btn = el("button", { class: "btn small", type: "button" }, "حفظ القرار");
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        const { error: e } = await db.rpc("decide_suggestion", {
+          p_id: s.id, p_status: st.value, p_response: rp.value.trim() || null
+        });
+        btn.disabled = false;
+        notify(e ? rpcError(e) : "تم حفظ القرار.", e ? "error" : "ok");
+      });
+      item.append(el("div", { class: "row" }, st, btn), rp);
+    }
+    return item;
+  }
+
+  async function founderSuggestionsTab() {
+    const { data, error } = await db.rpc("list_suggestions");
+    if (error) throw error;
+    if (!data.length) return el("p", { class: "muted" }, "لا توجد اقتراحات بعد.");
+    return el("div", null, ...data.map((s) => suggestionItem(s, true)));
+  }
+
+  // --- المشرف: اقتراحاتي ---
+  async function mySuggestionsTab() {
+    const { data, error } = await db.rpc("list_suggestions");
+    if (error) throw error;
+    const cat = el("select", null, ...Object.entries(CAT_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+    const title = el("input", { type: "text", maxlength: "120", placeholder: "عنوان الاقتراح" });
+    const body = el("textarea", { maxlength: "4000", placeholder: "اشرح اقتراحك، وكيف يفيد الطلاب أو سير العمل في المنصة" });
+    const btn = el("button", { class: "btn", type: "button" }, "إرسال الاقتراح");
+    btn.addEventListener("click", async () => {
+      if (title.value.trim().length < 3 || body.value.trim().length < 10) {
+        return notify("اكتب عنواناً واضحاً وشرحاً لا يقل عن 10 أحرف.", "error");
+      }
+      btn.disabled = true;
+      const { error: e } = await db.rpc("submit_suggestion", {
+        p_category: cat.value, p_title: title.value, p_body: body.value
+      });
+      btn.disabled = false;
+      if (e) return notify(rpcError(e), "error");
+      notify("وصل اقتراحك إلى المؤسس. شكراً لك.", "ok");
+      reloadTab();
+    });
+    const form = el("div", { class: "inner" },
+      el("h2", null, "اقتراح جديد"),
+      el("label", null, "النوع"), cat,
+      el("label", null, "العنوان"), title,
+      el("label", null, "التفاصيل"), body,
+      btn);
+    const list = el("div", null,
+      el("h2", null, "اقتراحاتي"),
+      data.length ? data.map((s) => suggestionItem(s, false)) : el("p", { class: "muted" }, "لم ترسل اقتراحات بعد."));
+    return el("div", null, form, list);
+  }
+
+  async function renderApp(session) {
+    show("appView");
+    const user = session.user;
+    let name = (user.user_metadata && user.user_metadata.full_name) || "";
+    let role = "student";
+    try {
+      const r = await db.rpc("current_role_name");
+      if (!r.error && r.data) role = r.data;
+      const p = await db.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+      if (p.data && p.data.full_name) name = p.data.full_name;
+    } catch (e) { /* keep defaults */ }
+    const first = (name || "").trim().split(/\s+/)[0];
+    $("welcomeName").textContent = first ? "أهلاً " + first : "أهلاً بك";
+    $("roleBadge").textContent = ROLE_LABEL[role] || ROLE_LABEL.student;
+    notify("");
+
+    if (role === "founder") {
+      buildTabs([
+        { label: "الحسابات", render: accountsTab },
+        { label: "الحدود", render: limitsTab },
+        { label: "طلبات التعيين", render: requestsTab },
+        { label: "الاقتراحات", render: founderSuggestionsTab }
+      ]);
+    } else if (["chief", "technical", "assistant"].includes(role)) {
+      buildTabs([{ label: "اقتراحاتي", render: mySuggestionsTab }]);
+    } else {
+      $("tabBar").replaceChildren();
+      $("tabBody").replaceChildren(el("p", null, "حسابك جاهز. المواد والدروس قريباً بإذن الله."));
+    }
+  }
+
   $("logoutBtn").addEventListener("click", async () => { await db.auth.signOut(); });
 
-  db.auth.onAuthStateChange((_event, session) => { render(session); });
-  db.auth.getSession().then(({ data }) => render(data.session));
+  // ---------- توجيه الحالة ----------
+  let shownUser = null;
+  function route(session) {
+    if (recoveryMode) { show("recoveryView"); return; }
+    if (session && session.user) {
+      if (shownUser === session.user.id && !$("appView").hidden) return;
+      shownUser = session.user.id;
+      renderApp(session);
+    } else {
+      shownUser = null;
+      $("tabBody").replaceChildren();
+      show("authView");
+    }
+  }
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (event === "PASSWORD_RECOVERY") { recoveryMode = true; setTimeout(() => show("recoveryView"), 0); return; }
+    if (event === "TOKEN_REFRESHED") return;
+    setTimeout(() => route(session), 0);
+  });
+
+  if (hashErrorCode) {
+    showMsg(hashErrorCode === "otp_expired"
+      ? "انتهت صلاحية الرابط أو سبق استخدامه. سجّل الدخول، وإن لم يُؤكَّد بريدك فاطلب إعادة الإرسال."
+      : "تعذّر إكمال الرابط. حاول مرة أخرى.", "error");
+    $("resendBtn").hidden = false;
+  }
 </script>
 </body>
 </html>
