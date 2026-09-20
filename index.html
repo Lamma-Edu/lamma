@@ -201,6 +201,17 @@
   .pick:hover { border-color: var(--green); }
   .chosen { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
   .panel { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 6px; }
+  .pname { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 4px; }
+  .pop {
+    position: absolute; z-index: 40; width: min(270px, calc(100vw - 16px)); text-align: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  }
+  .pop-ar { font-size: 1.08rem; font-weight: 700; }
+  .pop-ar.fnd { color: var(--gold); }
+  .pop-en { direction: ltr; color: var(--muted); font-size: .85rem; margin-top: 2px; }
+  .pop-name { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .pop-elite { margin-top: 8px; color: var(--gold); font-size: .85rem; }
   .gate {
     position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center;
     background: #0f1613; color: #f3e7c6; cursor: pointer; animation: gatein .4s ease both;
@@ -388,7 +399,8 @@
       EMPTY_REPLY: "اكتب الرد أولاً.",
       ALREADY_CLAIMED: "استلمه مشرف آخر قبلك.",
       CLAIM_FIRST: "استلم الاقتراح أولاً.",
-      BAD_DAYS: "مدة غير مسموحة."
+      BAD_DAYS: "مدة غير مسموحة.",
+      REASON_REQUIRED: "اكتب سبب الرفض."
     };
     for (const k of Object.keys(map)) if (m.includes(k)) return map[k];
     return "تعذّر تنفيذ الإجراء. أعد المحاولة.";
@@ -549,10 +561,11 @@
       const isFounder = a.role === "founder";
       const row = el("div", { class: "row" },
         el("div", { class: "grow" },
-          el("strong", null, person(a.full_name, a.role)),
+          el("strong", null, person(a.full_name, a.role, a.id)),
           el("div", { class: "muted ltr" }, a.email || "")),
         el("span", { class: "badge" }, ROLE_LABEL[a.role] || a.role),
         a.role === "student" && a.can_suggest ? el("span", { class: "badge alt" }, "طالب مميز") : null,
+        a.elite ? el("span", { class: "badge founder" }, "★ نخبة") : null,
         Date.now() - new Date(a.created_at).getTime() < 864e5 ? el("span", { class: "badge founder" }, "جديد") : null);
       if (!isFounder) {
         const sel = el("select", null,
@@ -583,6 +596,17 @@
             reloadTab();
           });
           row.append(sp);
+        }
+        if (["chief", "technical", "assistant"].includes(a.role)) {
+          const el2 = el("button", { class: "btn small secondary", type: "button" }, a.elite ? "سحب وسام النخبة" : "منح وسام النخبة");
+          el2.addEventListener("click", async () => {
+            el2.disabled = true;
+            const { error: e } = await db.rpc("set_elite", { p_target: a.id, p_value: !a.elite });
+            if (e) { el2.disabled = false; return notify(rpcError(e), "error"); }
+            notify("تم الحفظ.", "ok");
+            reloadTab();
+          });
+          row.append(el2);
         }
       }
       wrap.append(row);
@@ -652,10 +676,57 @@
   const ROLE_TAG = { founder: "FND", chief: "SUP-C", technical: "SUP-T", assistant: "SUP-A" };
   const KEEP_LABEL = { 3: "3 أيام", 7: "أسبوع", 14: "أسبوعان", 30: "شهر" };
 
-  // اسم + رمز الفئة بالإنجليزية بجانبه
-  function person(name, role) {
+  const TITLES = {
+    founder: ["المؤسس", "Founder"],
+    chief: ["مشرف رئيسي", "Chief Supervisor"],
+    technical: ["مشرف فني", "Technical Supervisor"],
+    assistant: ["مشرف مساعد", "Assistant Supervisor"],
+    student: ["طالب", "Student"]
+  };
+  let popEl = null;
+  function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+  document.addEventListener("click", (e) => { if (popEl && !popEl.contains(e.target)) closePop(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
+  function placePop(pop, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const w = pop.offsetWidth || 270;
+    let left = window.scrollX + r.left + r.width / 2 - w / 2;
+    left = Math.max(window.scrollX + 8, Math.min(left, window.scrollX + document.documentElement.clientWidth - w - 8));
+    pop.style.left = left + "px";
+    pop.style.top = (window.scrollY + r.bottom + 8) + "px";
+  }
+  // بطاقة تعريف صغيرة تظهر عند الضغط على اسم شخص (بدون صفحة جديدة)
+  async function openCard(anchor, id) {
+    closePop();
+    const pop = el("div", { class: "pop", role: "dialog" }, el("p", { class: "muted", style: "margin:0" }, "جاري التحميل…"));
+    document.body.append(pop);
+    popEl = pop;
+    placePop(pop, anchor);
+    const { data, error } = await db.rpc("person_card", { p_id: id });
+    if (popEl !== pop) return;
+    if (error || !data || !data.length) { pop.replaceChildren(el("p", { class: "muted", style: "margin:0" }, "تعذّر عرض المعلومات.")); return; }
+    const p = data[0];
+    const special = p.role === "student" && p.can_suggest;
+    const t = special ? ["طالب مميز", "Distinguished Student"] : (TITLES[p.role] || TITLES.student);
+    pop.replaceChildren(
+      el("div", { class: "pop-ar" + (p.role === "founder" ? " fnd" : "") }, t[0]),
+      el("div", { class: "pop-en" }, t[1]),
+      el("div", { class: "pop-name" }, p.full_name || "—"),
+      p.elite ? el("div", { class: "pop-elite" }, "★ من نخبة المشرفين · Elite Supervisor") : null);
+    placePop(pop, anchor);
+  }
+
+  // اسم + رمز الفئة؛ وإن مُرّر المعرّف يصبح قابلاً للضغط لعرض بطاقة التعريف
+  function person(name, role, id) {
     const t = ROLE_TAG[role];
-    return el("span", null, name || "—", t ? el("span", { class: "tag" + (role === "founder" ? " fnd" : "") }, t) : null);
+    const node = el("span", id ? { class: "pname", role: "button", tabindex: "0" } : null,
+      name || "—", t ? el("span", { class: "tag" + (role === "founder" ? " fnd" : "") }, t) : null);
+    if (id) {
+      const open = (e) => { e.stopPropagation(); e.preventDefault(); openCard(node, id); };
+      node.addEventListener("click", open);
+      node.addEventListener("keydown", (e) => { if (e.key === "Enter") open(e); });
+    }
+    return node;
   }
 
   function personPicker(getLevel) {
@@ -726,19 +797,21 @@
 
   function suggestionCard(s, kind, onOpen) {
     const prev = (s.body.length > 110 ? s.body.slice(0, 110) + "…" : s.body).replace(/\s+/g, " ");
-    const highlight = kind === "mine" ? s.unread : (s.can_claim || (kind === "founder" && s.status === "new"));
+    const highlight = kind === "mine" ? s.unread : (s.can_claim || s.offer_for_me || !!s.event_kind || (kind === "founder" && s.status === "new"));
     const card = el("button", { class: "scard" + (highlight ? " is-new" : ""), type: "button" },
       el("div", { class: "meta" },
         s.unread ? el("span", { class: "badge founder" }, "جديد") : null,
+        s.offer_for_me ? el("span", { class: "badge founder" }, "عرض تحويل") : null,
+        s.event_kind ? el("span", { class: "badge founder" }, s.event_kind === "reject" ? "رفض" : "اعتذار") : null,
         el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
         statusPill(s.status),
         el("span", { class: "muted" }, fmtDate(s.created_at)),
         s.reply_count ? el("span", { class: "muted" }, s.reply_count + " رد") : null),
       el("strong", { class: "stitle" }, s.title),
       el("span", { class: "muted sprev" }, prev),
-      kind !== "mine" ? el("span", { class: "muted" }, "من: ", person(s.author_name, s.author_role)) : null,
+      kind !== "mine" ? el("span", { class: "muted" }, "من: ", person(s.author_name, s.author_role, s.author)) : null,
       s.handler
-        ? el("span", { class: "muted" }, "المسؤول: ", person(s.handler_name, s.handler_role))
+        ? el("span", { class: "muted" }, "المسؤول: ", person(s.handler_name, s.handler_role, s.handler))
         : el("span", { class: s.can_claim ? "badge founder" : "badge alt", style: "align-self:flex-start" }, "غير مستلم"),
       s.forwarded_by_name ? el("span", { class: "muted" }, "محوّل من: " + s.forwarded_by_name) : null);
     card.addEventListener("click", () => onOpen(s));
@@ -751,9 +824,9 @@
     back.addEventListener("click", goBack);
     const statusBadge = statusPill(s.status);
     const lines = el("div", { class: "muted", style: "margin-top:10px;line-height:1.9" });
-    if (!isAuthor) lines.append(el("div", null, "من: ", person(s.author_name, s.author_role)));
+    if (!isAuthor) lines.append(el("div", null, "من: ", person(s.author_name, s.author_role, s.author)));
     lines.append(el("div", null, "موجّه إلى: " + (LEVEL_LABEL[s.target_level] || "—")));
-    lines.append(el("div", null, "المسؤول: ", s.handler ? person(s.handler_name, s.handler_role) : "لم يُستلم بعد"));
+    lines.append(el("div", null, "المسؤول: ", s.handler ? person(s.handler_name, s.handler_role, s.handler) : "لم يُستلم بعد"));
     if (s.forwarded_by_name) lines.append(el("div", null, "محوّل من: " + s.forwarded_by_name));
 
     const wrap = el("div", null,
@@ -774,13 +847,56 @@
       const kids = [];
       if (data.length) kids.push(el("h3", null, "الردود"));
       data.forEach((r) => kids.push(el("div", { class: "replybox" },
-        el("div", null, el("strong", null, person(r.replier_name, r.replier_role)),
+        el("div", null, el("strong", null, person(r.replier_name, r.replier_role, r.replier)),
           el("span", { class: "muted" }, " · " + fmtDate(r.created_at))),
         el("p", null, r.body))));
       if (!data.length && isAuthor) kids.push(el("p", { class: "muted" }, "لم يصل رد بعد."));
       thread.replaceChildren(...kids);
     }
     wrap.append(thread);
+
+    // ردّ المستلم على تحويلٍ أرسلتَه (اعتذار أو رفض)
+    if (s.event_kind) {
+      const who = s.event_actor_name || "المستلم";
+      wrap.append(el("div", { class: "replybox" },
+        el("strong", null, s.event_kind === "reject" ? who + " رفض استلام هذا الاقتراح" : who + " اعتذر: لا يستطيع استلام هذا الاقتراح"),
+        s.event_note ? el("p", null, s.event_note) : el("p", { class: "muted" }, "دون ملاحظة.")));
+      db.rpc("mark_events_seen", { p_id: s.id }).then(() => { s.event_kind = null; refreshBadges(); });
+    }
+
+    // عرض تحويل بانتظار ردّي
+    if (s.offer_for_me) {
+      const note = el("textarea", { placeholder: "ملاحظة (اختيارية عند الاعتذار، وإلزامية عند الرفض)", maxlength: "1000" });
+      const acc = el("button", { class: "btn", type: "button" }, "استلام الاقتراح");
+      const cant = el("button", { class: "btn small secondary", type: "button" }, "لا يمكنني");
+      const rej = el("button", { class: "btn small ghost-red", type: "button" }, "أرفض");
+      const respond = (action) => async () => {
+        const text = note.value.trim();
+        if (action === "reject" && text.length < 3) return notify("اكتب سبب الرفض.", "error");
+        [acc, cant, rej].forEach((b) => { b.disabled = true; });
+        const { error: e } = await db.rpc("respond_offer", { p_id: s.id, p_action: action, p_note: text || null });
+        [acc, cant, rej].forEach((b) => { b.disabled = false; });
+        if (e) return notify(rpcError(e), "error");
+        if (action === "accept") {
+          s.handler = myId; s.handler_name = myName; s.handler_role = currentRole;
+          s.is_mine = true; s.offer_for_me = false;
+          reopen(s);
+          notify("استلمتَ الاقتراح، وأصبحتَ مسؤولاً عنه.", "ok");
+        } else {
+          goBack();
+          notify(action === "reject" ? "تم إرسال رفضك مع السبب." : "تم إرسال اعتذارك.", "ok");
+        }
+      };
+      acc.addEventListener("click", respond("accept"));
+      cant.addEventListener("click", respond("cannot"));
+      rej.addEventListener("click", respond("reject"));
+      wrap.append(el("div", { class: "panel" },
+        el("h3", null, "عُرض عليك هذا الاقتراح" + (s.forwarded_by_name ? " من " + s.forwarded_by_name : "")),
+        el("p", { class: "muted" }, "يمكنك استلامه، أو الاعتذار إن لم تستطع، أو الرفض مع ذكر السبب."),
+        acc,
+        el("label", null, "ملاحظة"), note,
+        el("div", { class: "row", style: "border:0" }, cant, rej)));
+    }
 
     if (s.can_claim) {
       const claim = el("button", { class: "btn", type: "button" }, "استلام هذا الاقتراح");
@@ -849,11 +965,17 @@
             el("option", { value: "show" }, "إظهار أنه محوّل مني"),
             el("option", { value: "hide" }, "إخفاء أنه محوّل مني"))
         : null;
+      const modeSel = currentRole === "founder"
+        ? el("select", null,
+            el("option", { value: "optional" }, "طريقة التحويل: اقتراح تخييري (يستطيع الاعتذار أو الرفض)"),
+            el("option", { value: "forced" }, "طريقة التحويل: فرض (يُسند إليه مباشرة)"))
+        : null;
       const fwdBtn = el("button", { class: "btn small", type: "button" }, "تحويل");
       fwdBtn.addEventListener("click", async () => {
         fwdBtn.disabled = true;
         const { error: e } = await db.rpc("forward_suggestion", {
-          p_id: s.id, p_level: fc.level, p_user: fc.user, p_show: showSel ? (showSel.value || null) : null
+          p_id: s.id, p_level: fc.level, p_user: fc.user, p_show: showSel ? (showSel.value || null) : null,
+          p_mode: modeSel ? modeSel.value : "optional"
         });
         fwdBtn.disabled = false;
         if (e) return notify(rpcError(e), "error");
@@ -881,7 +1003,7 @@
         el("div", { class: "panel" }, el("h3", null, "مدة الاحتفاظ بعد آخر رد"),
           el("div", { class: "row" }, keep, keepBtn),
           el("p", { class: "muted" }, s.delete_after ? "سيُحذف تلقائياً في " + fmtDate(s.delete_after) + " إن لم يصل رد جديد." : "يبدأ العدّ بعد أول رد.")),
-        el("div", { class: "panel" }, el("h3", null, "تحويل الاقتراح"), fc.node, showSel,
+        el("div", { class: "panel" }, el("h3", null, "تحويل الاقتراح"), fc.node, modeSel, showSel,
           el("div", { class: "actions" }, fwdBtn)),
         el("div", { class: "panel" }, delBtn));
     }
@@ -924,7 +1046,7 @@
         sel.addEventListener("change", () => { filter = sel.value; renderList(); });
         head = el("div", { class: "topbar" }, el("span", { class: "muted" }, items.length + " اقتراح"), sel);
       } else {
-        head = el("p", { class: "muted" }, items.length + " اقتراح · " + items.filter((x) => x.can_claim).length + " بانتظار الاستلام");
+        head = el("p", { class: "muted" }, items.length + " اقتراح · " + items.filter((x) => x.can_claim || x.offer_for_me || x.event_kind).length + " بانتظار إجراء");
       }
       box.replaceChildren(head,
         items.length
@@ -973,7 +1095,7 @@
   }
 
   async function founderBriefing() {
-    const out = { total: null, pending: null, fresh: null, newToday: null, vacant: null };
+    const out = { total: null, pending: null, fresh: null, events: null, newToday: null, vacant: null };
     try {
       const [acc, req, sug, lim] = await Promise.all([
         db.rpc("founder_list_accounts"), db.rpc("founder_list_requests"), db.rpc("list_suggestions"),
@@ -990,7 +1112,10 @@
         }
       }
       if (req.data) out.pending = req.data.filter((r) => r.status === "pending").length;
-      if (sug.data) out.fresh = sug.data.filter((x) => x.status === "new").length;
+      if (sug.data) {
+        out.fresh = sug.data.filter((x) => x.status === "new").length;
+        out.events = sug.data.filter((x) => x.event_kind).length;
+      }
     } catch (e) { /* show dashes */ }
     return out;
   }
@@ -1005,6 +1130,7 @@
       el("div", { class: "stats" },
         stat(b.fresh, "اقتراحات جديدة", true),
         stat(b.pending, "طلبات بانتظار قرارك", true),
+        stat(b.events, "ردود على تحويلاتك", true),
         stat(b.newToday, "حسابات جديدة اليوم", true),
         stat(b.total, "إجمالي الحسابات", false),
         stat(b.vacant, "مناصب شاغرة", false))
@@ -1070,12 +1196,12 @@
         { label: "الحسابات", render: accountsTab },
         { label: "الحدود", render: limitsTab },
         { label: "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""), render: requestsTab },
-        { label: "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""), render: () => suggestionsTab("founder") }
+        { label: "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""), render: () => suggestionsTab("founder") }
       ]);
     } else if (["chief", "technical", "assistant"].includes(role) || special) {
       const d = await db.rpc("list_suggestions");
       const list = d.data || [];
-      const inbox = list.filter((x) => x.author !== myId && x.can_claim).length;
+      const inbox = list.filter((x) => x.author !== myId && (x.can_claim || x.offer_for_me || x.event_kind)).length;
       const unread = list.filter((x) => x.unread).length;
       $("banner").replaceChildren(...supervisorNotice(unread));
       const mine = { label: "اقتراحاتي" + (unread ? " (" + unread + ")" : ""), render: () => suggestionsTab("mine") };
@@ -1095,7 +1221,7 @@
         const b = await founderBriefing();
         $("banner").replaceChildren(...founderBanner(b));
         setTabLabel(2, "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""));
-        setTabLabel(3, "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""));
+        setTabLabel(3, "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""));
         return;
       }
       const isSup = ["chief", "technical", "assistant"].includes(currentRole);
@@ -1103,7 +1229,7 @@
       const d = await db.rpc("list_suggestions");
       const list = d.data || [];
       const unread = list.filter((x) => x.unread).length;
-      const inbox = list.filter((x) => x.author !== myId && x.can_claim).length;
+      const inbox = list.filter((x) => x.author !== myId && (x.can_claim || x.offer_for_me || x.event_kind)).length;
       $("banner").replaceChildren(...supervisorNotice(unread));
       const mineLabel = "اقتراحاتي" + (unread ? " (" + unread + ")" : "");
       if (isSup) { setTabLabel(0, "الوارد" + (inbox ? " (" + inbox + ")" : "")); setTabLabel(1, mineLabel); }
