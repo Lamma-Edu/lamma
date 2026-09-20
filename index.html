@@ -212,6 +212,11 @@
   .pop-en { direction: ltr; color: var(--muted); font-size: .85rem; margin-top: 2px; }
   .pop-name { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
   .pop-elite { margin-top: 8px; color: var(--gold); font-size: .85rem; }
+  details { border: 1px solid var(--line); border-radius: 12px; padding: 6px 14px; margin: 10px 0; background: var(--card); }
+  details > details { background: var(--bg); }
+  summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+  details[open] > summary { margin-bottom: 6px; }
+  .video { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; margin: 12px 0; }
   .gate {
     position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center;
     background: #0f1613; color: #f3e7c6; cursor: pointer; animation: gatein .4s ease both;
@@ -400,7 +405,9 @@
       ALREADY_CLAIMED: "استلمه مشرف آخر قبلك.",
       CLAIM_FIRST: "استلم الاقتراح أولاً.",
       BAD_DAYS: "مدة غير مسموحة.",
-      REASON_REQUIRED: "اكتب سبب الرفض."
+      REASON_REQUIRED: "اكتب سبب الرفض.",
+      BAD_INPUT: "بيانات ناقصة أو غير صحيحة.",
+      HAS_CHILDREN: "احذف ما بداخله أولاً."
     };
     for (const k of Object.keys(map)) if (m.includes(k)) return map[k];
     return "تعذّر تنفيذ الإجراء. أعد المحاولة.";
@@ -508,7 +515,7 @@
   let reloadTab = () => {};
   let tabDefs = [];
   let currentRole = null;
-  let myId = null, myName = "", canSuggest = false;
+  let myId = null, myName = "", canSuggest = false, myTrack = null, mineTab = 0;
   function setTabLabel(i, text) {
     if (tabDefs[i] && tabDefs[i].btn) tabDefs[i].btn.textContent = text;
   }
@@ -1094,6 +1101,270 @@
     return box;
   }
 
+  // ---------- المواد والدروس ----------
+  const TRACK_LABEL = { scientific: "علمي", literary: "أدبي" };
+  const SUB_LABEL = { computer: "حاسوب", engineering: "هندسية", biology: "أحياء" };
+  const LIT_LABEL = { geo_history: "الجغرافيا والتاريخ", english_lit: "اللغة الإنجليزية (أدب إنجليزي)", other: "أخرى" };
+
+  function safeUrl(u) {
+    try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") ? x.href : null; } catch (e) { return null; }
+  }
+  function youtubeId(u) {
+    try {
+      const x = new URL(u);
+      let id = null;
+      if (x.hostname === "youtu.be") id = x.pathname.slice(1);
+      else if (x.hostname.endsWith("youtube.com")) id = x.searchParams.get("v") || (x.pathname.startsWith("/embed/") ? x.pathname.split("/")[2] : null);
+      return id && /^[\w-]{6,20}$/.test(id) ? id : null;
+    } catch (e) { return null; }
+  }
+
+  // نموذج بسيط: fields = [{key,label,type,value,options,hint}]
+  function formView(title, fields, onSave, onCancel) {
+    const inputs = {};
+    const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع");
+    back.addEventListener("click", onCancel);
+    const kids = [back, el("h2", { style: "margin-top:8px" }, title)];
+    fields.forEach((f) => {
+      let input;
+      if (f.type === "textarea") { input = el("textarea", { style: "min-height:200px" }); input.value = f.value || ""; }
+      else if (f.type === "select") { input = el("select", null, ...f.options.map(([v, l]) => el("option", { value: v }, l))); input.value = f.value || ""; }
+      else if (f.type === "check") { input = el("input", { type: "checkbox" }); input.checked = !!f.value; }
+      else {
+        input = el("input", { type: f.type || "text" });
+        input.value = f.value === null || f.value === undefined ? "" : f.value;
+        if (f.type === "url") input.style.direction = "ltr";
+      }
+      inputs[f.key] = input;
+      kids.push(el("label", null, f.label), input);
+      if (f.hint) kids.push(el("div", { class: "hint" }, f.hint));
+    });
+    const btn = el("button", { class: "btn", type: "button" }, "حفظ");
+    btn.addEventListener("click", async () => {
+      const vals = {};
+      fields.forEach((f) => {
+        const i = inputs[f.key];
+        if (f.type === "check") vals[f.key] = i.checked;
+        else if (f.type === "number") vals[f.key] = i.value === "" ? 0 : parseInt(i.value, 10);
+        else vals[f.key] = i.value.trim();
+      });
+      btn.disabled = true;
+      const err = await onSave(vals);
+      btn.disabled = false;
+      if (err) notify(rpcError(err), "error");
+    });
+    kids.push(btn);
+    return el("div", null, ...kids);
+  }
+
+  function trackPicker() {
+    const track = el("select", null,
+      el("option", { value: "" }, "اختر السياق…"),
+      el("option", { value: "scientific" }, "علمي"),
+      el("option", { value: "literary" }, "أدبي"));
+    const sub = el("select", null, el("option", { value: "" }, "اختر التخصص…"),
+      ...Object.entries(SUB_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+    const lit = el("select", null, el("option", { value: "" }, "اختر مادتك الاختيارية…"),
+      ...Object.entries(LIT_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+    const subWrap = el("div", null, el("label", null, "التخصص العلمي"), sub);
+    const litWrap = el("div", null, el("label", null, "المادة الاختيارية"), lit);
+    subWrap.hidden = true;
+    litWrap.hidden = true;
+    track.addEventListener("change", () => {
+      subWrap.hidden = track.value !== "scientific";
+      litWrap.hidden = track.value !== "literary";
+    });
+    const btn = el("button", { class: "btn", type: "button" }, "حفظ واختيار موادي");
+    btn.addEventListener("click", async () => {
+      if (!track.value) return notify("اختر السياق أولاً.", "error");
+      if (track.value === "scientific" && !sub.value) return notify("اختر التخصص العلمي.", "error");
+      if (track.value === "literary" && !lit.value) return notify("اختر مادتك الاختيارية.", "error");
+      btn.disabled = true;
+      const { error } = await db.rpc("set_my_track", {
+        p_track: track.value,
+        p_sub: track.value === "scientific" ? sub.value : null,
+        p_lit: track.value === "literary" ? lit.value : null
+      });
+      btn.disabled = false;
+      if (error) return notify(rpcError(error), "error");
+      const { data } = await db.auth.getSession();
+      if (data.session) { shownUser = null; route(data.session); }
+    });
+    return el("div", null,
+      el("h2", null, "اختر مسارك الدراسي"),
+      el("p", { class: "muted" }, "يظهر لك المحتوى المناسب لمسارك. ولا يمكن تغييره لاحقاً إلا عن طريق الإدارة."),
+      el("label", null, "السياق"), track, subWrap, litWrap, btn);
+  }
+
+  async function contentTab() {
+    const box = el("div");
+    const canEdit = ["founder", "chief", "technical"].includes(currentRole);
+    const canDelete = ["founder", "chief"].includes(currentRole);
+    const isStaff = canEdit || currentRole === "assistant";
+    const openIds = new Set();
+    let tree = [];
+
+    const swap = (node) => { notify(""); box.replaceChildren(node); };
+    function mini(label, fn, danger) {
+      const b = el("button", { class: "btn small " + (danger ? "ghost-red" : "secondary"), type: "button" }, label);
+      b.addEventListener("click", fn);
+      return b;
+    }
+    const draft = () => el("span", { class: "badge alt", style: "margin-inline-start:8px" }, "مسودة");
+    function det(key, summary, kids) {
+      const d = el("details", null, el("summary", null, summary), ...kids);
+      if (openIds.has(key)) d.open = true;
+      d.addEventListener("toggle", () => { if (d.open) openIds.add(key); else openIds.delete(key); });
+      return d;
+    }
+
+    function build(rows) {
+      const subjects = new Map();
+      rows.forEach((r) => {
+        if (!subjects.has(r.subject_id)) subjects.set(r.subject_id, { id: r.subject_id, name: r.subject_name, grades: new Map() });
+        const sub = subjects.get(r.subject_id);
+        if (!r.grade_id) return;
+        if (!sub.grades.has(r.grade_id)) sub.grades.set(r.grade_id, { id: r.grade_id, name: r.grade_name, track: r.grade_track, sub: r.grade_sub, lit: r.grade_lit, units: new Map() });
+        const g = sub.grades.get(r.grade_id);
+        if (!r.unit_id) return;
+        if (!g.units.has(r.unit_id)) g.units.set(r.unit_id, { id: r.unit_id, name: r.unit_name, order: r.unit_order, published: r.unit_published, lessons: [] });
+        if (r.lesson_id) g.units.get(r.unit_id).lessons.push({ id: r.lesson_id, title: r.lesson_title, order: r.lesson_order, published: r.lesson_published, completed: r.completed });
+      });
+      return [...subjects.values()];
+    }
+
+    function render() {
+      const out = [];
+      if (canEdit) out.push(el("div", { class: "topbar" }, el("span", { class: "muted" }, "إدارة المواد والدروس"), mini("+ مادة", () => editSubject(null))));
+      if (!tree.length) out.push(el("p", { class: "muted" }, canEdit ? "لا توجد مواد بعد. ابدأ بإضافة مادة." : "لا يوجد محتوى منشور لك بعد."));
+      tree.forEach((sub) => {
+        const gKids = [];
+        if (canEdit) gKids.push(el("div", { class: "row" },
+          mini("تعديل المادة", () => editSubject(sub)), mini("+ مستوى", () => editGrade(sub, null)),
+          canDelete ? mini("حذف", () => del("subject", sub.id), true) : null));
+        [...sub.grades.values()].forEach((g) => {
+          const uKids = [];
+          if (canEdit) uKids.push(el("div", { class: "row" },
+            mini("تعديل المستوى", () => editGrade(sub, g)), mini("+ وحدة", () => editUnit(g, null)),
+            canDelete ? mini("حذف", () => del("grade", g.id), true) : null));
+          [...g.units.values()].forEach((u) => {
+            const lKids = [];
+            if (canEdit) lKids.push(el("div", { class: "row" },
+              mini("تعديل الوحدة", () => editUnit(g, u)), mini("+ درس", () => editLesson(u, null)),
+              canDelete ? mini("حذف", () => del("unit", u.id), true) : null));
+            u.lessons.forEach((l) => {
+              const b = el("button", { class: "pick", type: "button" }, (l.completed ? "✓ " : "") + l.title, isStaff && !l.published ? draft() : null);
+              b.addEventListener("click", () => openLesson(l.id));
+              lKids.push(b);
+            });
+            if (!u.lessons.length && !canEdit) lKids.push(el("p", { class: "muted" }, "لا توجد دروس بعد."));
+            uKids.push(det("u" + u.id, [u.name, isStaff && !u.published ? draft() : null], lKids));
+          });
+          const audience = [g.track ? TRACK_LABEL[g.track] : null, g.sub ? SUB_LABEL[g.sub] : null, g.lit ? LIT_LABEL[g.lit] : null].filter(Boolean).join(" · ");
+          gKids.push(det("g" + g.id, [g.name, audience ? el("span", { class: "badge alt", style: "margin-inline-start:8px" }, audience) : null], uKids));
+        });
+        out.push(det("s" + sub.id, sub.name, gKids));
+      });
+      box.replaceChildren(...out);
+    }
+
+    async function load() {
+      box.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
+      const { data, error } = await db.rpc("list_content");
+      if (error) { box.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة.")); return; }
+      tree = build(data);
+      render();
+    }
+    const done = async (err, msg) => { if (err) return err; await load(); notify(msg || "تم الحفظ.", "ok"); return null; };
+
+    function editSubject(sub) {
+      swap(formView(sub ? "تعديل المادة" : "مادة جديدة",
+        [{ key: "name", label: "اسم المادة", value: sub && sub.name }],
+        async (v) => done((await db.rpc("save_subject", { p_id: sub ? sub.id : null, p_name: v.name })).error), load));
+    }
+    function editGrade(sub, g) {
+      swap(formView(g ? "تعديل المستوى" : "مستوى جديد", [
+        { key: "name", label: "اسم المستوى (مثل: الصف الثالث الثانوي)", value: g && g.name },
+        { key: "track", label: "السياق", type: "select", value: (g && g.track) || "",
+          options: [["", "للجميع"], ["scientific", "علمي"], ["literary", "أدبي"]] },
+        { key: "sub", label: "التخصص العلمي (للمواد الاختيارية)", type: "select", value: (g && g.sub) || "",
+          options: [["", "للجميع"], ...Object.entries(SUB_LABEL)] },
+        { key: "lit", label: "المادة الاختيارية للأدبي", type: "select", value: (g && g.lit) || "",
+          options: [["", "للجميع"], ...Object.entries(LIT_LABEL)] }
+      ], async (v) => done((await db.rpc("save_grade", {
+        p_id: g ? g.id : null, p_subject: sub.id, p_name: v.name,
+        p_track: v.track || null, p_sub: v.sub || null, p_lit: v.lit || null
+      })).error), load));
+    }
+    function editUnit(g, u) {
+      swap(formView(u ? "تعديل الوحدة" : "وحدة جديدة", [
+        { key: "name", label: "اسم الوحدة", value: u && u.name },
+        { key: "order", label: "الترتيب", type: "number", value: u ? u.order : 0 },
+        { key: "published", label: "منشورة (تظهر للطلاب)", type: "check", value: u ? u.published : false }
+      ], async (v) => done((await db.rpc("save_unit", { p_id: u ? u.id : null, p_grade: g.id, p_name: v.name, p_order: v.order, p_published: v.published })).error), load));
+    }
+    async function editLesson(u, l) {
+      let cur = null;
+      if (l) {
+        const r = await db.rpc("get_lesson", { p_id: l.id });
+        if (r.error || !r.data || !r.data.length) return notify("تعذّر فتح الدرس للتعديل.", "error");
+        cur = r.data[0];
+      }
+      const unitId = cur ? cur.unit_id : u.id;
+      swap(formView(cur ? "تعديل الدرس" : "درس جديد", [
+        { key: "title", label: "عنوان الدرس", value: cur && cur.title },
+        { key: "content", label: "الشرح", type: "textarea", value: cur && cur.content,
+          hint: "نص عادي. اكتب شرحك بأسلوبك من المقرر، ولا تنسخ نص الكتاب حرفياً." },
+        { key: "video", label: "رابط فيديو (اختياري)", type: "url", value: cur && cur.video_url },
+        { key: "pdf", label: "رابط ملف PDF (اختياري)", type: "url", value: cur && cur.pdf_url },
+        { key: "order", label: "الترتيب", type: "number", value: cur ? cur.order_index : 0 },
+        { key: "published", label: "منشور (يظهر للطلاب)", type: "check", value: cur ? cur.published : false }
+      ], async (v) => done((await db.rpc("save_lesson", {
+        p_id: cur ? cur.id : null, p_unit: unitId, p_title: v.title, p_content: v.content,
+        p_video: v.video || null, p_pdf: v.pdf || null, p_order: v.order, p_published: v.published
+      })).error), load));
+    }
+    async function del(kind, id) {
+      if (!confirm("هل أنت متأكد من الحذف؟ لا يمكن التراجع.")) return;
+      const { error } = await db.rpc("delete_content", { p_kind: kind, p_id: id });
+      if (error) return notify(rpcError(error), "error");
+      await load();
+      notify("تم الحذف.", "ok");
+    }
+
+    async function openLesson(id) {
+      swap(el("p", { class: "muted" }, "جاري التحميل…"));
+      const { data, error } = await db.rpc("get_lesson", { p_id: id });
+      if (error || !data || !data.length) return swap(el("p", { class: "msg error" }, "تعذّر فتح الدرس."));
+      const l = data[0];
+      const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى المواد");
+      back.addEventListener("click", load);
+      const kids = [back, el("h2", null, l.title)];
+      if (l.content) kids.push(el("div", { class: "readbox" }, l.content));
+      const yid = l.video_url ? youtubeId(l.video_url) : null;
+      if (yid) kids.push(el("iframe", { class: "video", src: "https://www.youtube-nocookie.com/embed/" + yid, title: "فيديو الدرس", loading: "lazy", allowfullscreen: "" }));
+      else if (l.video_url && safeUrl(l.video_url)) kids.push(el("p", null, el("a", { href: safeUrl(l.video_url), target: "_blank", rel: "noopener noreferrer" }, "فتح فيديو الدرس")));
+      if (l.pdf_url && safeUrl(l.pdf_url)) kids.push(el("p", null, el("a", { href: safeUrl(l.pdf_url), target: "_blank", rel: "noopener noreferrer" }, "فتح ملف PDF")));
+      const paint = (b) => { b.textContent = l.completed ? "✓ مكتمل — اضغط للإلغاء" : "تعليم الدرس كمكتمل"; b.className = "btn small" + (l.completed ? " secondary" : ""); };
+      const doneBtn = el("button", { type: "button" });
+      paint(doneBtn);
+      doneBtn.addEventListener("click", async () => {
+        doneBtn.disabled = true;
+        const { error: e } = await db.rpc("mark_lesson_done", { p_id: id, p_done: !l.completed });
+        doneBtn.disabled = false;
+        if (e) return notify(rpcError(e), "error");
+        l.completed = !l.completed;
+        paint(doneBtn);
+      });
+      kids.push(el("div", { class: "actions" }, doneBtn));
+      if (canEdit) kids.push(el("div", { class: "actions" }, mini("تعديل الدرس", () => editLesson(null, l))));
+      swap(el("div", null, ...kids));
+    }
+
+    await load();
+    return box;
+  }
+
   async function founderBriefing() {
     const out = { total: null, pending: null, fresh: null, events: null, newToday: null, vacant: null };
     try {
@@ -1168,13 +1439,15 @@
     let name = (user.user_metadata && user.user_metadata.full_name) || "";
     let role = "student";
     canSuggest = false;
+    myTrack = null;
     try {
       const r = await db.rpc("current_role_name");
       if (!r.error && r.data) role = r.data;
-      const p = await db.from("profiles").select("full_name,can_suggest").eq("id", user.id).maybeSingle();
+      const p = await db.from("profiles").select("full_name,can_suggest,track").eq("id", user.id).maybeSingle();
       if (p.data) {
         if (p.data.full_name) name = p.data.full_name;
         canSuggest = !!p.data.can_suggest;
+        myTrack = p.data.track || null;
       }
     } catch (e) { /* keep defaults */ }
     myName = name;
@@ -1188,6 +1461,13 @@
     $("banner").replaceChildren();
     notify("");
 
+    if (role === "student" && !myTrack) {
+      $("tabBar").replaceChildren();
+      $("tabBody").replaceChildren(trackPicker());
+      return;
+    }
+
+    const contentTabDef = { label: role === "student" ? "موادي" : "المواد", render: contentTab };
     if (role === "founder") {
       const b = await founderBriefing();
       $("banner").replaceChildren(...founderBanner(b));
@@ -1196,20 +1476,29 @@
         { label: "الحسابات", render: accountsTab },
         { label: "الحدود", render: limitsTab },
         { label: "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""), render: requestsTab },
-        { label: "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""), render: () => suggestionsTab("founder") }
+        { label: "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""), render: () => suggestionsTab("founder") },
+        contentTabDef
       ]);
-    } else if (["chief", "technical", "assistant"].includes(role) || special) {
+    } else if (["chief", "technical", "assistant"].includes(role)) {
       const d = await db.rpc("list_suggestions");
       const list = d.data || [];
       const inbox = list.filter((x) => x.author !== myId && (x.can_claim || x.offer_for_me || x.event_kind)).length;
       const unread = list.filter((x) => x.unread).length;
       $("banner").replaceChildren(...supervisorNotice(unread));
-      const mine = { label: "اقتراحاتي" + (unread ? " (" + unread + ")" : ""), render: () => suggestionsTab("mine") };
-      if (special) buildTabs([mine]);
-      else buildTabs([{ label: "الوارد" + (inbox ? " (" + inbox + ")" : ""), render: () => suggestionsTab("inbox") }, mine]);
+      mineTab = 1;
+      buildTabs([
+        { label: "الوارد" + (inbox ? " (" + inbox + ")" : ""), render: () => suggestionsTab("inbox") },
+        { label: "اقتراحاتي" + (unread ? " (" + unread + ")" : ""), render: () => suggestionsTab("mine") },
+        contentTabDef
+      ]);
+    } else if (special) {
+      const d = await db.rpc("list_suggestions");
+      const unread = (d.data || []).filter((x) => x.unread).length;
+      $("banner").replaceChildren(...supervisorNotice(unread));
+      mineTab = 1;
+      buildTabs([contentTabDef, { label: "اقتراحاتي" + (unread ? " (" + unread + ")" : ""), render: () => suggestionsTab("mine") }]);
     } else {
-      $("tabBar").replaceChildren();
-      $("tabBody").replaceChildren(el("p", null, "حسابك جاهز. المواد والدروس قريباً بإذن الله."));
+      buildTabs([contentTabDef]);
     }
   }
 
@@ -1233,7 +1522,7 @@
       $("banner").replaceChildren(...supervisorNotice(unread));
       const mineLabel = "اقتراحاتي" + (unread ? " (" + unread + ")" : "");
       if (isSup) { setTabLabel(0, "الوارد" + (inbox ? " (" + inbox + ")" : "")); setTabLabel(1, mineLabel); }
-      else setTabLabel(0, mineLabel);
+      else setTabLabel(mineTab, mineLabel);
     } catch (e) { /* try again next minute */ }
   }
   setInterval(refreshBadges, 60000);
