@@ -195,18 +195,15 @@
     return "حدث خطأ. أعد المحاولة بعد قليل.";
   }
 
-  // Make sure the signed-in user has a row in "profiles".
+  // The "profiles" row is created by the database when the account is created.
+  // Here we only read the name from it.
   async function ensureProfile(user) {
     const metaName = (user.user_metadata && user.user_metadata.full_name) || "";
     try {
       const { data, error } = await db
         .from("profiles").select("id, full_name").eq("id", user.id).maybeSingle();
       if (error) throw error;
-      if (data) return data.full_name || metaName;
-      const ins = await db.from("profiles")
-        .insert({ id: user.id, full_name: metaName }).select("full_name").maybeSingle();
-      if (ins.error) throw ins.error;
-      return (ins.data && ins.data.full_name) || metaName;
+      return (data && data.full_name) || metaName;
     } catch (e) {
       console.warn("profile check failed:", e && e.message);
       return metaName;
@@ -219,7 +216,8 @@
     $("welcomeView").hidden = !signedIn;
     if (signedIn) {
       const name = await ensureProfile(session.user);
-      $("welcomeName").textContent = name ? "أهلاً " + name : "أهلاً بك";
+      const firstName = (name || "").trim().split(/\s+/)[0];
+      $("welcomeName").textContent = firstName ? "أهلاً " + firstName : "أهلاً بك";
     }
   }
 
