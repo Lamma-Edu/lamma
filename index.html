@@ -148,6 +148,58 @@
   .item p { white-space: pre-wrap; margin: 8px 0; }
   .item .reply { color: var(--green); }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cards { display: grid; gap: 10px; }
+  .scard {
+    display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+    text-align: right; width: 100%; padding: 14px 16px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .scard:hover { border-color: var(--green); }
+  .scard:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  .scard.is-new { border-inline-start: 4px solid var(--green); }
+  .stitle { font-size: 1.02rem; }
+  .sprev { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .readbox {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px; line-height: 1.9; white-space: pre-wrap; font-size: 1.02rem; margin: 12px 0;
+  }
+  .replybox { border-inline-start: 4px solid var(--green); background: var(--panel); border-radius: 12px; padding: 14px 16px; margin: 12px 0; }
+  .replybox p { white-space: pre-wrap; margin: 6px 0 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .actions { margin-top: 14px; }
+  :root { --gold: #a97a1f; --gold-soft: rgba(169,122,31,.12); }
+  @media (prefers-color-scheme: dark) { :root { --gold: #e3b95c; --gold-soft: rgba(227,185,92,.14); } }
+  .badge.founder { background: var(--gold-soft); color: var(--gold); border: 1px solid var(--gold); font-weight: 600; }
+  body.founder .welcome { border-color: var(--gold); }
+  .banner {
+    border: 1px solid var(--gold); border-radius: 16px; padding: 22px; text-align: right; margin-top: 14px;
+    background: linear-gradient(135deg, var(--gold-soft), transparent 70%), var(--card);
+    animation: rise .5s ease both;
+  }
+  .banner:empty { display: none; }
+  .crown { display: inline-block; width: 30px; height: 30px; color: var(--gold); }
+  .crown svg { width: 100%; height: 100%; display: block; }
+  .banner h2 { color: var(--gold); margin: 6px 0 4px; font-size: 1.35rem; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .stat { background: var(--panel); border-radius: 12px; padding: 10px 16px; min-width: 120px; }
+  .stat b { display: block; font-size: 1.5rem; }
+  .stat span { color: var(--muted); font-size: .8rem; }
+  .stat.hot b { color: var(--gold); }
+  .replybox { border-inline-start-color: var(--gold); }
+  .replybox strong { color: var(--gold); }
+  .gate {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center;
+    background: #0f1613; color: #f3e7c6; cursor: pointer; animation: gatein .4s ease both;
+  }
+  .gate .crown { width: 76px; height: 76px; color: #e3b95c; margin: 0 auto; }
+  .gate h2 { font-size: clamp(1.7rem, 6vw, 2.5rem); margin: 16px 0 6px; color: #f3e7c6; }
+  .gate p { margin: 0; color: #c9b98a; }
+  .gate.out { animation: gateout .6s ease both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes gatein { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes gateout { to { opacity: 0; visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .banner, .gate, .gate.out { animation: none; } }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -213,6 +265,7 @@
       </div>
       <button class="btn secondary small" id="logoutBtn" type="button">تسجيل الخروج</button>
     </div>
+    <div class="banner" id="banner"></div>
     <div class="tabbar" id="tabBar" role="tablist"></div>
     <p class="msg" id="panelMsg" role="status" aria-live="polite"></p>
     <div class="card" id="tabBody"></div>
@@ -266,6 +319,21 @@
     $("main").classList.toggle("wide", id === "appView");
   }
   function fmtDate(d) { return new Date(d).toLocaleDateString("ar-EG"); }
+
+  // Static, trusted SVG (no user content).
+  const CROWN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>';
+  function crownEl() {
+    const c = document.createElement("span");
+    c.className = "crown";
+    c.innerHTML = CROWN_SVG;
+    return c;
+  }
+  function timeGreeting() {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return "صباح الخير";
+    if (h >= 12 && h < 18) return "طاب يومك";
+    return "مساء الخير";
+  }
 
   const ROLE_LABEL = {
     founder: "المؤسس", chief: "مشرف رئيسي", technical: "مشرف فني",
@@ -443,12 +511,15 @@
     if (acc.error) throw acc.error;
     const limits = Object.fromEntries((lim.data || []).map((l) => [l.key, l.value]));
     const count = (r) => acc.data.filter((a) => a.role === r).length;
+    const supervisors = count("chief") + count("technical") + count("assistant");
     const wrap = el("div");
-    wrap.append(el("p", { class: "muted" },
-      "رئيسيون " + count("chief") + "/" + (limits.max_chief ?? "؟") +
-      " · فنيون " + count("technical") + "/" + (limits.max_technical ?? "؟") +
-      " · مساعدون " + count("assistant") + "/" + (limits.max_assistant ?? "؟") +
-      " · طلاب " + count("student")));
+    wrap.append(
+      el("p", null, el("strong", null, "إجمالي الحسابات: " + acc.data.length),
+        " — طلاب: " + count("student") + " · مشرفون: " + supervisors + " · المؤسس: " + count("founder")),
+      el("p", { class: "muted" },
+        "رئيسيون " + count("chief") + "/" + (limits.max_chief ?? "؟") +
+        " · فنيون " + count("technical") + "/" + (limits.max_technical ?? "؟") +
+        " · مساعدون " + count("assistant") + "/" + (limits.max_assistant ?? "؟")));
 
     acc.data.forEach((a) => {
       const isFounder = a.role === "founder";
@@ -539,73 +610,163 @@
     return wrap;
   }
 
-  // --- الاقتراحات (عرض عنصر) ---
-  function suggestionItem(s, founderMode) {
-    const item = el("div", { class: "item" },
+  // --- الاقتراحات: بطاقات + صفحة تفصيل ---
+  function suggestionCard(s, founderMode, onOpen) {
+    const prev = (s.body.length > 110 ? s.body.slice(0, 110) + "…" : s.body).replace(/\s+/g, " ");
+    const card = el("button", { class: "scard" + (s.status === "new" ? " is-new" : ""), type: "button" },
       el("div", { class: "meta" },
         el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
         el("span", { class: "badge alt" }, STATUS_LABEL[s.status] || s.status),
+        el("span", { class: "muted" }, fmtDate(s.created_at))),
+      el("strong", { class: "stitle" }, s.title),
+      el("span", { class: "muted sprev" }, prev),
+      founderMode && s.author_name ? el("span", { class: "muted" }, "من: " + s.author_name) : null);
+    card.addEventListener("click", () => onOpen(s));
+    return card;
+  }
+
+  function suggestionDetail(s, founderMode, goBack) {
+    const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى القائمة");
+    back.addEventListener("click", goBack);
+    const statusBadge = el("span", { class: "badge alt" }, STATUS_LABEL[s.status] || s.status);
+    const wrap = el("div", null,
+      back,
+      el("div", { class: "meta" },
+        el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
+        statusBadge,
         el("span", { class: "muted" }, fmtDate(s.created_at) + (founderMode && s.author_name ? " — " + s.author_name : ""))),
-      el("h3", null, s.title),
-      el("p", null, s.body));
-    if (!founderMode && s.response) item.append(el("p", { class: "reply" }, "رد المؤسس: " + s.response));
+      el("h2", { style: "margin-top:14px" }, s.title),
+      el("div", { class: "readbox" }, s.body));
+
     if (founderMode) {
       const st = el("select", null, ...Object.entries(STATUS_LABEL).map(([k, v]) => el("option", { value: k }, v)));
       st.value = s.status;
-      const rp = el("textarea", { placeholder: "رد على صاحب الاقتراح (اختياري)", maxlength: "1000" });
+      const rp = el("textarea", { placeholder: "اكتب رداً يصل إلى صاحب الاقتراح (اختياري)", maxlength: "1000" });
       rp.value = s.response || "";
       const btn = el("button", { class: "btn small", type: "button" }, "حفظ القرار");
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        const { error: e } = await db.rpc("decide_suggestion", {
-          p_id: s.id, p_status: st.value, p_response: rp.value.trim() || null
-        });
+        const response = rp.value.trim() || null;
+        const { error: e } = await db.rpc("decide_suggestion", { p_id: s.id, p_status: st.value, p_response: response });
         btn.disabled = false;
-        notify(e ? rpcError(e) : "تم حفظ القرار.", e ? "error" : "ok");
+        if (e) return notify(rpcError(e), "error");
+        s.status = st.value;
+        s.response = response;
+        statusBadge.textContent = STATUS_LABEL[s.status];
+        notify("تم حفظ القرار.", "ok");
       });
-      item.append(el("div", { class: "row" }, st, btn), rp);
+      wrap.append(el("label", null, "القرار"), st, el("label", null, "الرد على صاحب الاقتراح"), rp, el("div", { class: "actions" }, btn));
+    } else if (s.response) {
+      wrap.append(el("div", { class: "replybox" }, el("strong", null, "رد المؤسس"), el("p", null, s.response)));
+    } else {
+      wrap.append(el("p", { class: "muted" }, "لم يصل رد بعد."));
     }
-    return item;
+    return wrap;
   }
 
   async function founderSuggestionsTab() {
-    const { data, error } = await db.rpc("list_suggestions");
-    if (error) throw error;
-    if (!data.length) return el("p", { class: "muted" }, "لا توجد اقتراحات بعد.");
-    return el("div", null, ...data.map((s) => suggestionItem(s, true)));
+    const box = el("div");
+    async function list() {
+      box.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
+      const { data, error } = await db.rpc("list_suggestions");
+      if (error) { box.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة.")); return; }
+      if (!data.length) { box.replaceChildren(el("p", { class: "muted" }, "لا توجد اقتراحات بعد.")); return; }
+      const fresh = data.filter((x) => x.status === "new").length;
+      box.replaceChildren(
+        el("p", { class: "muted" }, data.length + " اقتراح · " + fresh + " جديد"),
+        el("div", { class: "cards" }, ...data.map((x) => suggestionCard(x, true, open))));
+    }
+    function open(s) { notify(""); box.replaceChildren(suggestionDetail(s, true, list)); }
+    await list();
+    return box;
   }
 
-  // --- المشرف: اقتراحاتي ---
   async function mySuggestionsTab() {
-    const { data, error } = await db.rpc("list_suggestions");
-    if (error) throw error;
-    const cat = el("select", null, ...Object.entries(CAT_LABEL).map(([k, v]) => el("option", { value: k }, v)));
-    const title = el("input", { type: "text", maxlength: "120", placeholder: "عنوان الاقتراح" });
-    const body = el("textarea", { maxlength: "4000", placeholder: "اشرح اقتراحك، وكيف يفيد الطلاب أو سير العمل في المنصة" });
-    const btn = el("button", { class: "btn", type: "button" }, "إرسال الاقتراح");
-    btn.addEventListener("click", async () => {
-      if (title.value.trim().length < 3 || body.value.trim().length < 10) {
-        return notify("اكتب عنواناً واضحاً وشرحاً لا يقل عن 10 أحرف.", "error");
-      }
-      btn.disabled = true;
-      const { error: e } = await db.rpc("submit_suggestion", {
-        p_category: cat.value, p_title: title.value, p_body: body.value
+    const box = el("div");
+    async function list() {
+      box.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
+      const { data, error } = await db.rpc("list_suggestions");
+      if (error) { box.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة.")); return; }
+      const newBtn = el("button", { class: "btn small", type: "button" }, "+ اقتراح جديد");
+      newBtn.addEventListener("click", form);
+      box.replaceChildren(
+        el("div", { class: "topbar" }, el("h2", { style: "margin:0" }, "اقتراحاتي"), newBtn),
+        data.length
+          ? el("div", { class: "cards" }, ...data.map((x) => suggestionCard(x, false, open)))
+          : el("p", { class: "muted" }, "لم ترسل اقتراحات بعد. اضغط «اقتراح جديد» لتبدأ."));
+    }
+    function open(s) { notify(""); box.replaceChildren(suggestionDetail(s, false, list)); }
+    function form() {
+      notify("");
+      const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى القائمة");
+      back.addEventListener("click", list);
+      const cat = el("select", null, ...Object.entries(CAT_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+      const title = el("input", { type: "text", maxlength: "120", placeholder: "عنوان الاقتراح" });
+      const body = el("textarea", { maxlength: "4000", placeholder: "اشرح اقتراحك، وكيف يفيد الطلاب أو سير العمل في المنصة" });
+      const btn = el("button", { class: "btn", type: "button" }, "إرسال الاقتراح");
+      btn.addEventListener("click", async () => {
+        if (title.value.trim().length < 3 || body.value.trim().length < 10) {
+          return notify("اكتب عنواناً واضحاً وشرحاً لا يقل عن 10 أحرف.", "error");
+        }
+        btn.disabled = true;
+        const { error: e } = await db.rpc("submit_suggestion", {
+          p_category: cat.value, p_title: title.value, p_body: body.value
+        });
+        btn.disabled = false;
+        if (e) return notify(rpcError(e), "error");
+        await list();
+        notify("وصل اقتراحك إلى المؤسس. شكراً لك.", "ok");
       });
-      btn.disabled = false;
-      if (e) return notify(rpcError(e), "error");
-      notify("وصل اقتراحك إلى المؤسس. شكراً لك.", "ok");
-      reloadTab();
-    });
-    const form = el("div", { class: "inner" },
-      el("h2", null, "اقتراح جديد"),
-      el("label", null, "النوع"), cat,
-      el("label", null, "العنوان"), title,
-      el("label", null, "التفاصيل"), body,
-      btn);
-    const list = el("div", null,
-      el("h2", null, "اقتراحاتي"),
-      data.length ? data.map((s) => suggestionItem(s, false)) : el("p", { class: "muted" }, "لم ترسل اقتراحات بعد."));
-    return el("div", null, form, list);
+      box.replaceChildren(back, el("h2", { style: "margin-top:8px" }, "اقتراح جديد"),
+        el("label", null, "النوع"), cat,
+        el("label", null, "العنوان"), title,
+        el("label", null, "التفاصيل"), body,
+        btn);
+    }
+    await list();
+    return box;
+  }
+
+  async function founderBriefing() {
+    const out = { total: null, pending: null, fresh: null };
+    try {
+      const [acc, req, sug] = await Promise.all([
+        db.rpc("founder_list_accounts"), db.rpc("founder_list_requests"), db.rpc("list_suggestions")
+      ]);
+      if (acc.data) out.total = acc.data.length;
+      if (req.data) out.pending = req.data.filter((r) => r.status === "pending").length;
+      if (sug.data) out.fresh = sug.data.filter((x) => x.status === "new").length;
+    } catch (e) { /* show dashes */ }
+    return out;
+  }
+
+  function founderBanner(b) {
+    const stat = (n, label, hot) =>
+      el("div", { class: "stat" + (hot && n > 0 ? " hot" : "") }, el("b", null, n === null ? "—" : n), el("span", null, label));
+    return [
+      crownEl(),
+      el("h2", null, timeGreeting() + "، أهلاً بمؤسس لمّة"),
+      el("p", { class: "muted", style: "margin:0" }, "المنصة كلها بين يديك."),
+      el("div", { class: "stats" },
+        stat(b.fresh, "اقتراحات جديدة", true),
+        stat(b.pending, "طلبات بانتظار قرارك", true),
+        stat(b.total, "إجمالي الحسابات", false))
+    ];
+  }
+
+  // Shown only on this device, once per login. Nothing is announced to anyone else.
+  function showGate() {
+    try { if (sessionStorage.getItem("gateShown")) return; sessionStorage.setItem("gateShown", "1"); } catch (e) { /* ignore */ }
+    const gate = el("div", { class: "gate", role: "presentation" },
+      crownEl(), el("h2", null, "أهلاً بمؤسس لمّة"), el("p", null, "المنصة في خدمتك"));
+    const close = () => {
+      if (!gate.isConnected) return;
+      gate.classList.add("out");
+      setTimeout(() => gate.remove(), 600);
+    };
+    gate.addEventListener("click", close);
+    document.body.append(gate);
+    setTimeout(close, 2300);
   }
 
   async function renderApp(session) {
@@ -622,14 +783,20 @@
     const first = (name || "").trim().split(/\s+/)[0];
     $("welcomeName").textContent = first ? "أهلاً " + first : "أهلاً بك";
     $("roleBadge").textContent = ROLE_LABEL[role] || ROLE_LABEL.student;
+    $("roleBadge").className = "badge" + (role === "founder" ? " founder" : "");
+    document.body.classList.toggle("founder", role === "founder");
+    $("banner").replaceChildren();
     notify("");
 
     if (role === "founder") {
+      const b = await founderBriefing();
+      $("banner").replaceChildren(...founderBanner(b));
+      showGate();
       buildTabs([
         { label: "الحسابات", render: accountsTab },
         { label: "الحدود", render: limitsTab },
-        { label: "طلبات التعيين", render: requestsTab },
-        { label: "الاقتراحات", render: founderSuggestionsTab }
+        { label: "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""), render: requestsTab },
+        { label: "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""), render: founderSuggestionsTab }
       ]);
     } else if (["chief", "technical", "assistant"].includes(role)) {
       buildTabs([{ label: "اقتراحاتي", render: mySuggestionsTab }]);
@@ -639,7 +806,10 @@
     }
   }
 
-  $("logoutBtn").addEventListener("click", async () => { await db.auth.signOut(); });
+  $("logoutBtn").addEventListener("click", async () => {
+    try { sessionStorage.removeItem("gateShown"); } catch (e) { /* ignore */ }
+    await db.auth.signOut();
+  });
 
   // ---------- توجيه الحالة ----------
   let shownUser = null;
@@ -652,6 +822,8 @@
     } else {
       shownUser = null;
       $("tabBody").replaceChildren();
+      $("banner").replaceChildren();
+      document.body.classList.remove("founder");
       show("authView");
     }
   }
