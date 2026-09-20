@@ -186,9 +186,21 @@
   .stat b { display: block; font-size: 1.5rem; }
   .stat span { color: var(--muted); font-size: .8rem; }
   .stat.hot b { color: var(--gold); }
-  .replybox { border-inline-start-color: var(--gold); }
-  .replybox strong { color: var(--gold); }
-  .replybox .crown { width: 18px; height: 18px; vertical-align: -3px; margin-inline-end: 6px; }
+  .tag {
+    display: inline-block; direction: ltr; font-size: .68rem; letter-spacing: .04em; line-height: 1.5;
+    padding: 0 6px; margin-inline-start: 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted);
+    vertical-align: 1px;
+  }
+  .tag.fnd { border-color: var(--gold); color: var(--gold); }
+  .badge.ok { background: transparent; border: 1px solid var(--green); color: var(--green); }
+  .results { display: grid; gap: 6px; margin-top: 8px; }
+  .pick {
+    display: block; width: 100%; text-align: right; padding: 10px 12px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .pick:hover { border-color: var(--green); }
+  .chosen { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+  .panel { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 6px; }
   .gate {
     position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center;
     background: #0f1613; color: #f3e7c6; cursor: pointer; animation: gatein .4s ease both;
@@ -373,7 +385,10 @@
       UNKNOWN_LIMIT: "حد غير معروف.",
       BAD_STATUS: "حالة غير صحيحة.",
       NOT_FOUND: "العنصر غير موجود.",
-      EMPTY_REPLY: "اكتب الرد أولاً."
+      EMPTY_REPLY: "اكتب الرد أولاً.",
+      ALREADY_CLAIMED: "استلمه مشرف آخر قبلك.",
+      CLAIM_FIRST: "استلم الاقتراح أولاً.",
+      BAD_DAYS: "مدة غير مسموحة."
     };
     for (const k of Object.keys(map)) if (m.includes(k)) return map[k];
     return "تعذّر تنفيذ الإجراء. أعد المحاولة.";
@@ -481,6 +496,7 @@
   let reloadTab = () => {};
   let tabDefs = [];
   let currentRole = null;
+  let myId = null, myName = "", canSuggest = false;
   function setTabLabel(i, text) {
     if (tabDefs[i] && tabDefs[i].btn) tabDefs[i].btn.textContent = text;
   }
@@ -533,9 +549,10 @@
       const isFounder = a.role === "founder";
       const row = el("div", { class: "row" },
         el("div", { class: "grow" },
-          el("strong", null, a.full_name || "—"),
+          el("strong", null, person(a.full_name, a.role)),
           el("div", { class: "muted ltr" }, a.email || "")),
         el("span", { class: "badge" }, ROLE_LABEL[a.role] || a.role),
+        a.role === "student" && a.can_suggest ? el("span", { class: "badge alt" }, "طالب مميز") : null,
         Date.now() - new Date(a.created_at).getTime() < 864e5 ? el("span", { class: "badge founder" }, "جديد") : null);
       if (!isFounder) {
         const sel = el("select", null,
@@ -556,6 +573,17 @@
           reloadTab();
         });
         row.append(sel, btn);
+        if (a.role === "student") {
+          const sp = el("button", { class: "btn small secondary", type: "button" }, a.can_suggest ? "إيقاف الاقتراحات" : "منح الاقتراحات");
+          sp.addEventListener("click", async () => {
+            sp.disabled = true;
+            const { error: e } = await db.rpc("set_can_suggest", { p_target: a.id, p_value: !a.can_suggest });
+            if (e) { sp.disabled = false; return notify(rpcError(e), "error"); }
+            notify("تم الحفظ.", "ok");
+            reloadTab();
+          });
+          row.append(sp);
+        }
       }
       wrap.append(row);
     });
@@ -619,40 +647,122 @@
     return wrap;
   }
 
-  // --- الاقتراحات: بطاقات + صفحة تفصيل + سلسلة ردود ---
-  function statusPill(status, founderMode) {
-    const decided = !founderMode && ["accepted", "rejected", "done"].includes(status);
-    return el("span", { class: decided ? "badge founder" : "badge alt" },
-      (decided ? "قرار المؤسس: " : "") + (STATUS_LABEL[status] || status));
+  // --- الاقتراحات: توجيه واستلام وتحويل وحذف ---
+  const LEVEL_LABEL = { assistant: "مشرف مساعد", technical: "مشرف فني", chief: "مشرف رئيسي", founder: "المؤسس" };
+  const ROLE_TAG = { founder: "FND", chief: "SUP-C", technical: "SUP-T", assistant: "SUP-A" };
+  const KEEP_LABEL = { 3: "3 أيام", 7: "أسبوع", 14: "أسبوعان", 30: "شهر" };
+
+  // اسم + رمز الفئة بالإنجليزية بجانبه
+  function person(name, role) {
+    const t = ROLE_TAG[role];
+    return el("span", null, name || "—", t ? el("span", { class: "tag" + (role === "founder" ? " fnd" : "") }, t) : null);
   }
 
-  function suggestionCard(s, founderMode, onOpen) {
+  function personPicker(getLevel) {
+    const input = el("input", { type: "text", placeholder: "اكتب أول حروف الاسم للبحث", autocomplete: "off" });
+    const results = el("div", { class: "results" });
+    const chosen = el("div", { class: "chosen" });
+    let picked = null, timer = null;
+    function setPicked(p) {
+      picked = p;
+      chosen.replaceChildren();
+      if (p) {
+        const x = el("button", { class: "linkbtn", type: "button" }, "إلغاء الاختيار");
+        x.addEventListener("click", () => setPicked(null));
+        chosen.append(el("span", { class: "badge" }, person(p.full_name, p.role)), x);
+      }
+      results.replaceChildren();
+    }
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (!q) { results.replaceChildren(); return; }
+      timer = setTimeout(async () => {
+        const { data, error } = await db.rpc("search_supervisors", { p_level: getLevel() || null, p_query: q });
+        if (error) { results.replaceChildren(el("p", { class: "muted" }, "تعذّر البحث.")); return; }
+        if (!data.length) { results.replaceChildren(el("p", { class: "muted" }, "لا توجد نتائج.")); return; }
+        results.replaceChildren(...data.map((p) => {
+          const b = el("button", { class: "pick", type: "button" }, person(p.full_name, p.role));
+          b.addEventListener("click", () => { input.value = ""; setPicked(p); });
+          return b;
+        }));
+      }, 300);
+    });
+    return {
+      node: el("div", null, input, results, chosen),
+      get value() { return picked; },
+      clear() { setPicked(null); input.value = ""; }
+    };
+  }
+
+  // اختيار المستوى، أو مشرف بعينه بالبحث عن اسمه
+  function targetChooser(levels) {
+    const level = el("select", null, ...levels.map((k) => el("option", { value: k }, LEVEL_LABEL[k])));
+    const picker = personPicker(() => (level.value === "founder" ? null : level.value));
+    const pickWrap = el("div", null, picker.node);
+    pickWrap.hidden = true;
+    const toggle = el("button", { class: "linkbtn", type: "button" }, "اختيار مشرف بعينه");
+    let specific = false;
+    function setSpecific(v) {
+      specific = v && level.value !== "founder";
+      pickWrap.hidden = !specific;
+      toggle.textContent = specific ? "إرساله لأي مشرف في هذا المستوى" : "اختيار مشرف بعينه";
+      if (!specific) picker.clear();
+    }
+    toggle.addEventListener("click", () => setSpecific(!specific));
+    level.addEventListener("change", () => { toggle.hidden = level.value === "founder"; setSpecific(false); });
+    toggle.hidden = level.value === "founder";
+    return {
+      node: el("div", null, level, el("div", null, toggle), pickWrap),
+      get level() { return level.value; },
+      get user() { return picker.value ? picker.value.id : null; }
+    };
+  }
+
+  function statusPill(status) {
+    const done = ["accepted", "rejected", "done"].includes(status);
+    return el("span", { class: done ? "badge ok" : "badge alt" }, STATUS_LABEL[status] || status);
+  }
+
+  function suggestionCard(s, kind, onOpen) {
     const prev = (s.body.length > 110 ? s.body.slice(0, 110) + "…" : s.body).replace(/\s+/g, " ");
-    const highlight = founderMode ? s.status === "new" : s.unread;
+    const highlight = kind === "mine" ? s.unread : (s.can_claim || (kind === "founder" && s.status === "new"));
     const card = el("button", { class: "scard" + (highlight ? " is-new" : ""), type: "button" },
       el("div", { class: "meta" },
-        s.unread ? el("span", { class: "badge founder" }, "جديد من المؤسس") : null,
+        s.unread ? el("span", { class: "badge founder" }, "جديد") : null,
         el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
-        statusPill(s.status, founderMode),
+        statusPill(s.status),
         el("span", { class: "muted" }, fmtDate(s.created_at)),
         s.reply_count ? el("span", { class: "muted" }, s.reply_count + " رد") : null),
       el("strong", { class: "stitle" }, s.title),
       el("span", { class: "muted sprev" }, prev),
-      founderMode && s.author_name ? el("span", { class: "muted" }, "من: " + s.author_name) : null);
+      kind !== "mine" ? el("span", { class: "muted" }, "من: ", person(s.author_name, s.author_role)) : null,
+      s.handler
+        ? el("span", { class: "muted" }, "المسؤول: ", person(s.handler_name, s.handler_role))
+        : el("span", { class: s.can_claim ? "badge founder" : "badge alt", style: "align-self:flex-start" }, "غير مستلم"),
+      s.forwarded_by_name ? el("span", { class: "muted" }, "محوّل من: " + s.forwarded_by_name) : null);
     card.addEventListener("click", () => onOpen(s));
     return card;
   }
 
-  function suggestionDetail(s, founderMode, goBack) {
+  function suggestionDetail(s, goBack, reopen) {
+    const isAuthor = s.author === myId;
     const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى القائمة");
     back.addEventListener("click", goBack);
-    const statusBadge = statusPill(s.status, founderMode);
+    const statusBadge = statusPill(s.status);
+    const lines = el("div", { class: "muted", style: "margin-top:10px;line-height:1.9" });
+    if (!isAuthor) lines.append(el("div", null, "من: ", person(s.author_name, s.author_role)));
+    lines.append(el("div", null, "موجّه إلى: " + (LEVEL_LABEL[s.target_level] || "—")));
+    lines.append(el("div", null, "المسؤول: ", s.handler ? person(s.handler_name, s.handler_role) : "لم يُستلم بعد"));
+    if (s.forwarded_by_name) lines.append(el("div", null, "محوّل من: " + s.forwarded_by_name));
+
     const wrap = el("div", null,
       back,
       el("div", { class: "meta" },
         el("span", { class: "badge" }, CAT_LABEL[s.category] || s.category),
         statusBadge,
-        el("span", { class: "muted" }, fmtDate(s.created_at) + (founderMode && s.author_name ? " — " + s.author_name : ""))),
+        el("span", { class: "muted" }, fmtDate(s.created_at))),
+      lines,
       el("h2", { style: "margin-top:14px" }, s.title),
       el("div", { class: "readbox" }, s.body));
 
@@ -660,29 +770,34 @@
     async function loadThread() {
       const { data, error } = await db.rpc("list_suggestion_replies", { p_id: s.id });
       if (error) { thread.replaceChildren(el("p", { class: "msg error" }, "تعذّر تحميل الردود.")); return; }
+      s.reply_count = data.length;
       const kids = [];
-      if (data.length) kids.push(el("h3", null, "ردود المؤسس"));
+      if (data.length) kids.push(el("h3", null, "الردود"));
       data.forEach((r) => kids.push(el("div", { class: "replybox" },
-        el("div", null, crownEl(), el("strong", null, "المؤسس"), el("span", { class: "muted" }, " · " + fmtDate(r.created_at))),
+        el("div", null, el("strong", null, person(r.replier_name, r.replier_role)),
+          el("span", { class: "muted" }, " · " + fmtDate(r.created_at))),
         el("p", null, r.body))));
-      if (!data.length && !founderMode) kids.push(el("p", { class: "muted" }, "لم يصل رد بعد."));
+      if (!data.length && isAuthor) kids.push(el("p", { class: "muted" }, "لم يصل رد بعد."));
       thread.replaceChildren(...kids);
     }
     wrap.append(thread);
 
-    if (founderMode) {
-      const st = el("select", null, ...Object.entries(STATUS_LABEL).map(([k, v]) => el("option", { value: k }, v)));
-      st.value = s.status;
-      const stBtn = el("button", { class: "btn small", type: "button" }, "حفظ الحالة");
-      stBtn.addEventListener("click", async () => {
-        stBtn.disabled = true;
-        const { error: e } = await db.rpc("set_suggestion_status", { p_id: s.id, p_status: st.value });
-        stBtn.disabled = false;
-        if (e) return notify(rpcError(e), "error");
-        s.status = st.value;
-        statusBadge.textContent = STATUS_LABEL[s.status];
-        notify("تم حفظ الحالة.", "ok");
+    if (s.can_claim) {
+      const claim = el("button", { class: "btn", type: "button" }, "استلام هذا الاقتراح");
+      claim.addEventListener("click", async () => {
+        claim.disabled = true;
+        const { error: e } = await db.rpc("claim_suggestion", { p_id: s.id });
+        if (e) { claim.disabled = false; return notify(rpcError(e), "error"); }
+        s.handler = myId; s.handler_name = myName; s.handler_role = currentRole;
+        s.is_mine = true; s.can_claim = false;
+        reopen(s);
+        notify("استلمتَ الاقتراح، وأصبحتَ مسؤولاً عنه.", "ok");
       });
+      wrap.append(claim);
+    }
+
+    if (s.is_mine) {
+      // --- الرد ---
       const rp = el("textarea", { placeholder: "اكتب رداً يصل إلى صاحب الاقتراح", maxlength: "2000" });
       const rpBtn = el("button", { class: "btn small", type: "button" }, "إرسال الرد");
       rpBtn.addEventListener("click", async () => {
@@ -694,15 +809,85 @@
         if (e) return notify(rpcError(e), "error");
         rp.value = "";
         await loadThread();
-        notify("أُرسل ردّك. سيظهر لصاحب الاقتراح فور دخوله.", "ok");
+        notify("أُرسل الرد. سيظهر لصاحب الاقتراح فور دخوله.", "ok");
       });
+
+      // --- الحالة ---
+      const st = el("select", null, ...Object.entries(STATUS_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+      st.value = s.status;
+      const stBtn = el("button", { class: "btn small", type: "button" }, "حفظ الحالة");
+      stBtn.addEventListener("click", async () => {
+        stBtn.disabled = true;
+        const { error: e } = await db.rpc("set_suggestion_status", { p_id: s.id, p_status: st.value });
+        stBtn.disabled = false;
+        if (e) return notify(rpcError(e), "error");
+        s.status = st.value;
+        statusBadge.textContent = STATUS_LABEL[s.status];
+        statusBadge.className = ["accepted", "rejected", "done"].includes(s.status) ? "badge ok" : "badge alt";
+        notify("تم حفظ الحالة.", "ok");
+      });
+
+      // --- مدة الاحتفاظ ---
+      const keep = el("select", null, ...Object.entries(KEEP_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+      keep.value = String(s.keep_days || 7);
+      const keepBtn = el("button", { class: "btn small", type: "button" }, "حفظ المدة");
+      keepBtn.addEventListener("click", async () => {
+        keepBtn.disabled = true;
+        const { error: e } = await db.rpc("set_suggestion_retention", { p_id: s.id, p_days: parseInt(keep.value, 10) });
+        keepBtn.disabled = false;
+        if (e) return notify(rpcError(e), "error");
+        s.keep_days = parseInt(keep.value, 10);
+        notify("تم حفظ مدة الاحتفاظ.", "ok");
+      });
+
+      // --- التحويل ---
+      const levels = currentRole === "founder" ? ["assistant", "technical", "chief"] : ["assistant", "technical", "chief", "founder"];
+      const fc = targetChooser(levels);
+      const showSel = currentRole === "founder"
+        ? el("select", null,
+            el("option", { value: "" }, "إظهار المصدر: حسب الإعداد الافتراضي"),
+            el("option", { value: "show" }, "إظهار أنه محوّل مني"),
+            el("option", { value: "hide" }, "إخفاء أنه محوّل مني"))
+        : null;
+      const fwdBtn = el("button", { class: "btn small", type: "button" }, "تحويل");
+      fwdBtn.addEventListener("click", async () => {
+        fwdBtn.disabled = true;
+        const { error: e } = await db.rpc("forward_suggestion", {
+          p_id: s.id, p_level: fc.level, p_user: fc.user, p_show: showSel ? (showSel.value || null) : null
+        });
+        fwdBtn.disabled = false;
+        if (e) return notify(rpcError(e), "error");
+        goBack();
+        notify("تم تحويل الاقتراح.", "ok");
+      });
+
+      // --- الحذف ---
+      const delBtn = el("button", { class: "btn small ghost-red", type: "button" }, "حذف الاقتراح");
+      delBtn.addEventListener("click", async () => {
+        const answered = (s.reply_count || 0) > 0;
+        const ask = answered
+          ? "سيُحذف هذا الاقتراح نهائياً لدى الجميع. هل أنت متأكد؟"
+          : "لم يُرَدّ على هذا الاقتراح بعد. هل أنت متأكد أنك تريد حذفه؟";
+        if (!confirm(ask)) return;
+        const { error: e } = await db.rpc("delete_suggestion", { p_id: s.id, p_force: !answered });
+        if (e) return notify(rpcError(e), "error");
+        goBack();
+        notify("تم الحذف.", "ok");
+      });
+
       wrap.append(
-        el("label", null, "الحالة"), el("div", { class: "row" }, st, stBtn),
-        el("label", null, "رد جديد"), rp, el("div", { class: "actions" }, rpBtn));
+        el("div", { class: "panel" }, el("h3", null, "الرد"), rp, el("div", { class: "actions" }, rpBtn)),
+        el("div", { class: "panel" }, el("h3", null, "الحالة"), el("div", { class: "row" }, st, stBtn)),
+        el("div", { class: "panel" }, el("h3", null, "مدة الاحتفاظ بعد آخر رد"),
+          el("div", { class: "row" }, keep, keepBtn),
+          el("p", { class: "muted" }, s.delete_after ? "سيُحذف تلقائياً في " + fmtDate(s.delete_after) + " إن لم يصل رد جديد." : "يبدأ العدّ بعد أول رد.")),
+        el("div", { class: "panel" }, el("h3", null, "تحويل الاقتراح"), fc.node, showSel,
+          el("div", { class: "actions" }, fwdBtn)),
+        el("div", { class: "panel" }, delBtn));
     }
 
     loadThread().then(async () => {
-      if (!founderMode && s.unread) {
+      if (isAuthor && s.unread) {
         await db.rpc("mark_suggestion_seen", { p_id: s.id });
         s.unread = false;
         refreshBadges();
@@ -711,43 +896,54 @@
     return wrap;
   }
 
-  async function founderSuggestionsTab() {
+  // kind: founder | inbox | mine
+  async function suggestionsTab(kind) {
     const box = el("div");
+    let cache = [];
+    let filter = "all";
+    function open(s) { notify(""); box.replaceChildren(suggestionDetail(s, list, open)); }
+    function renderList() {
+      let items = cache;
+      if (kind === "inbox") items = cache.filter((x) => x.author !== myId);
+      if (kind === "mine") items = cache.filter((x) => x.author === myId);
+      if (kind === "founder") {
+        if (filter === "toMe") items = items.filter((x) => x.target_level === "founder");
+        if (filter === "unclaimed") items = items.filter((x) => !x.handler);
+      }
+      let head;
+      if (kind === "mine") {
+        const newBtn = el("button", { class: "btn small", type: "button" }, "+ اقتراح جديد");
+        newBtn.addEventListener("click", form);
+        head = el("div", { class: "topbar" }, el("h2", { style: "margin:0" }, "اقتراحاتي"), newBtn);
+      } else if (kind === "founder") {
+        const sel = el("select", null,
+          el("option", { value: "all" }, "كل الاقتراحات"),
+          el("option", { value: "toMe" }, "الموجهة إلى المؤسس"),
+          el("option", { value: "unclaimed" }, "غير المستلمة"));
+        sel.value = filter;
+        sel.addEventListener("change", () => { filter = sel.value; renderList(); });
+        head = el("div", { class: "topbar" }, el("span", { class: "muted" }, items.length + " اقتراح"), sel);
+      } else {
+        head = el("p", { class: "muted" }, items.length + " اقتراح · " + items.filter((x) => x.can_claim).length + " بانتظار الاستلام");
+      }
+      box.replaceChildren(head,
+        items.length
+          ? el("div", { class: "cards" }, ...items.map((x) => suggestionCard(x, kind, open)))
+          : el("p", { class: "muted" }, kind === "mine" ? "لم ترسل اقتراحات بعد. اضغط «اقتراح جديد» لتبدأ." : "لا توجد اقتراحات."));
+    }
     async function list() {
       box.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
       const { data, error } = await db.rpc("list_suggestions");
       if (error) { box.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة.")); return; }
-      if (!data.length) { box.replaceChildren(el("p", { class: "muted" }, "لا توجد اقتراحات بعد.")); return; }
-      const fresh = data.filter((x) => x.status === "new").length;
-      box.replaceChildren(
-        el("p", { class: "muted" }, data.length + " اقتراح · " + fresh + " جديد"),
-        el("div", { class: "cards" }, ...data.map((x) => suggestionCard(x, true, open))));
+      cache = data;
+      renderList();
     }
-    function open(s) { notify(""); box.replaceChildren(suggestionDetail(s, true, list)); }
-    await list();
-    return box;
-  }
-
-  async function mySuggestionsTab() {
-    const box = el("div");
-    async function list() {
-      box.replaceChildren(el("p", { class: "muted" }, "جاري التحميل…"));
-      const { data, error } = await db.rpc("list_suggestions");
-      if (error) { box.replaceChildren(el("p", { class: "msg error" }, "تعذّر التحميل. أعد المحاولة.")); return; }
-      const newBtn = el("button", { class: "btn small", type: "button" }, "+ اقتراح جديد");
-      newBtn.addEventListener("click", form);
-      box.replaceChildren(
-        el("div", { class: "topbar" }, el("h2", { style: "margin:0" }, "اقتراحاتي"), newBtn),
-        data.length
-          ? el("div", { class: "cards" }, ...data.map((x) => suggestionCard(x, false, open)))
-          : el("p", { class: "muted" }, "لم ترسل اقتراحات بعد. اضغط «اقتراح جديد» لتبدأ."));
-    }
-    function open(s) { notify(""); box.replaceChildren(suggestionDetail(s, false, list)); }
     function form() {
       notify("");
       const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى القائمة");
       back.addEventListener("click", list);
       const cat = el("select", null, ...Object.entries(CAT_LABEL).map(([k, v]) => el("option", { value: k }, v)));
+      const tc = targetChooser(["assistant", "technical", "chief", "founder"]);
       const title = el("input", { type: "text", maxlength: "120", placeholder: "عنوان الاقتراح" });
       const body = el("textarea", { maxlength: "4000", placeholder: "اشرح اقتراحك، وكيف يفيد الطلاب أو سير العمل في المنصة" });
       const btn = el("button", { class: "btn", type: "button" }, "إرسال الاقتراح");
@@ -757,15 +953,17 @@
         }
         btn.disabled = true;
         const { error: e } = await db.rpc("submit_suggestion", {
-          p_category: cat.value, p_title: title.value, p_body: body.value
+          p_category: cat.value, p_title: title.value, p_body: body.value,
+          p_target_level: tc.level, p_target_user: tc.user
         });
         btn.disabled = false;
         if (e) return notify(rpcError(e), "error");
         await list();
-        notify("وصل اقتراحك إلى المؤسس. شكراً لك.", "ok");
+        notify("وصل اقتراحك. شكراً لك.", "ok");
       });
       box.replaceChildren(back, el("h2", { style: "margin-top:8px" }, "اقتراح جديد"),
         el("label", null, "النوع"), cat,
+        el("label", null, "إلى"), tc.node,
         el("label", null, "العنوان"), title,
         el("label", null, "التفاصيل"), body,
         btn);
@@ -816,10 +1014,9 @@
   function supervisorNotice(n) {
     if (!n) return [];
     return [
-      crownEl(),
-      el("h2", null, "رد جديد من المؤسس"),
+      el("h2", null, "ردّ جديد على اقتراحك"),
       el("p", { class: "muted", style: "margin:0" },
-        n === 1 ? "لديك اقتراح واحد عليه رد أو قرار جديد." : "لديك " + n + " اقتراحات عليها ردود أو قرارات جديدة.")
+        n === 1 ? "لديك اقتراح واحد عليه رد أو تحديث جديد." : "لديك " + n + " اقتراحات عليها ردود أو تحديثات جديدة.")
     ];
   }
 
@@ -841,17 +1038,24 @@
   async function renderApp(session) {
     show("appView");
     const user = session.user;
+    myId = user.id;
     let name = (user.user_metadata && user.user_metadata.full_name) || "";
     let role = "student";
+    canSuggest = false;
     try {
       const r = await db.rpc("current_role_name");
       if (!r.error && r.data) role = r.data;
-      const p = await db.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
-      if (p.data && p.data.full_name) name = p.data.full_name;
+      const p = await db.from("profiles").select("full_name,can_suggest").eq("id", user.id).maybeSingle();
+      if (p.data) {
+        if (p.data.full_name) name = p.data.full_name;
+        canSuggest = !!p.data.can_suggest;
+      }
     } catch (e) { /* keep defaults */ }
+    myName = name;
     const first = (name || "").trim().split(/\s+/)[0];
+    const special = role === "student" && canSuggest;
     $("welcomeName").textContent = first ? "أهلاً " + first : "أهلاً بك";
-    $("roleBadge").textContent = ROLE_LABEL[role] || ROLE_LABEL.student;
+    $("roleBadge").textContent = special ? "طالب مميز" : (ROLE_LABEL[role] || ROLE_LABEL.student);
     $("roleBadge").className = "badge" + (role === "founder" ? " founder" : "");
     document.body.classList.toggle("founder", role === "founder");
     currentRole = role;
@@ -866,13 +1070,17 @@
         { label: "الحسابات", render: accountsTab },
         { label: "الحدود", render: limitsTab },
         { label: "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""), render: requestsTab },
-        { label: "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""), render: founderSuggestionsTab }
+        { label: "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""), render: () => suggestionsTab("founder") }
       ]);
-    } else if (["chief", "technical", "assistant"].includes(role)) {
-      const sug = await db.rpc("list_suggestions");
-      const n = sug.data ? sug.data.filter((x) => x.unread).length : 0;
-      $("banner").replaceChildren(...supervisorNotice(n));
-      buildTabs([{ label: "اقتراحاتي" + (n ? " (" + n + ")" : ""), render: mySuggestionsTab }]);
+    } else if (["chief", "technical", "assistant"].includes(role) || special) {
+      const d = await db.rpc("list_suggestions");
+      const list = d.data || [];
+      const inbox = list.filter((x) => x.author !== myId && x.can_claim).length;
+      const unread = list.filter((x) => x.unread).length;
+      $("banner").replaceChildren(...supervisorNotice(unread));
+      const mine = { label: "اقتراحاتي" + (unread ? " (" + unread + ")" : ""), render: () => suggestionsTab("mine") };
+      if (special) buildTabs([mine]);
+      else buildTabs([{ label: "الوارد" + (inbox ? " (" + inbox + ")" : ""), render: () => suggestionsTab("inbox") }, mine]);
     } else {
       $("tabBar").replaceChildren();
       $("tabBody").replaceChildren(el("p", null, "حسابك جاهز. المواد والدروس قريباً بإذن الله."));
@@ -888,12 +1096,18 @@
         $("banner").replaceChildren(...founderBanner(b));
         setTabLabel(2, "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""));
         setTabLabel(3, "الاقتراحات" + (b.fresh ? " (" + b.fresh + ")" : ""));
-      } else if (["chief", "technical", "assistant"].includes(currentRole)) {
-        const sug = await db.rpc("list_suggestions");
-        const n = sug.data ? sug.data.filter((x) => x.unread).length : 0;
-        $("banner").replaceChildren(...supervisorNotice(n));
-        setTabLabel(0, "اقتراحاتي" + (n ? " (" + n + ")" : ""));
+        return;
       }
+      const isSup = ["chief", "technical", "assistant"].includes(currentRole);
+      if (!isSup && !canSuggest) return;
+      const d = await db.rpc("list_suggestions");
+      const list = d.data || [];
+      const unread = list.filter((x) => x.unread).length;
+      const inbox = list.filter((x) => x.author !== myId && x.can_claim).length;
+      $("banner").replaceChildren(...supervisorNotice(unread));
+      const mineLabel = "اقتراحاتي" + (unread ? " (" + unread + ")" : "");
+      if (isSup) { setTabLabel(0, "الوارد" + (inbox ? " (" + inbox + ")" : "")); setTabLabel(1, mineLabel); }
+      else setTabLabel(0, mineLabel);
     } catch (e) { /* try again next minute */ }
   }
   setInterval(refreshBadges, 60000);
