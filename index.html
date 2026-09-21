@@ -217,6 +217,41 @@
   summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   details[open] > summary { margin-bottom: 6px; }
   .video { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; margin: 12px 0; }
+  body.calm .tabbar { display: none; }
+  body.calm .banner { border: 0; padding: 0; background: none; animation: none; margin-top: 14px; }
+  .hero { position: relative; height: clamp(230px, 38vh, 340px); border-radius: 18px; overflow: hidden; background: #1b2530; }
+  .hero-art, .hero-art svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero-text { position: absolute; inset-inline: 0; bottom: 0; padding: 22px; color: #fff; text-align: right;
+    background: linear-gradient(to top, rgba(0,0,0,.5), transparent); }
+  .hero-text h2 { color: #fff; margin: 6px 0 2px; font-size: 1.45rem; text-shadow: 0 1px 8px rgba(0,0,0,.45); }
+  .hero-text p { margin: 0; color: rgba(255,255,255,.88); }
+  .hero-text .crown { width: 26px; height: 26px; color: #f1d38a; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; min-height: 32px; }
+  .chip { background: var(--panel); border-radius: 999px; padding: 6px 14px; font-size: .85rem; color: var(--muted); }
+  .chip.hot { color: var(--gold); border: 1px solid var(--gold); background: transparent; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .tile { padding: 20px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    color: var(--ink); font: inherit; cursor: pointer; }
+  .tile:hover, .tile:focus-visible { border-color: var(--gold); outline: none; }
+  .sectionbar { display: flex; align-items: center; gap: 14px; margin: 14px 0 8px; }
+  .hero {
+    position: relative; border-radius: 18px; overflow: hidden; min-height: 240px; color: #fff;
+    display: flex; align-items: flex-end; background: #2b2b52;
+  }
+  .scene { position: absolute; inset: 0; }
+  .scene svg { width: 100%; height: 100%; display: block; }
+  .hero-text { position: relative; width: 100%; padding: 22px; background: linear-gradient(to top, rgba(0,0,0,.5), transparent); }
+  .hero h2 { color: #fff; margin: 0 0 4px; font-size: 1.6rem; }
+  .hero p { margin: 0; opacity: .92; }
+  .hero .linkbtn { color: #fff; opacity: .85; padding: 8px 0 0; }
+  .doors { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
+  .door {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: right;
+    padding: 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+    color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .door:hover { border-color: var(--green); }
+  .pop-dept { color: var(--muted); font-size: .85rem; margin-top: 6px; }
   .gate {
     position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; text-align: center;
     background: #0f1613; color: #f3e7c6; cursor: pointer; animation: gatein .4s ease both;
@@ -297,6 +332,10 @@
     <div class="banner" id="banner"></div>
     <div class="tabbar" id="tabBar" role="tablist"></div>
     <p class="msg" id="panelMsg" role="status" aria-live="polite"></p>
+    <div class="sectionbar" id="sectionBar" hidden>
+      <button class="linkbtn" id="homeBtn" type="button">→ الرئيسية</button>
+      <strong id="sectionTitle"></strong>
+    </div>
     <div class="card" id="tabBody"></div>
   </section>
 </main>
@@ -515,12 +554,15 @@
   let reloadTab = () => {};
   let tabDefs = [];
   let currentRole = null;
-  let myId = null, myName = "", canSuggest = false, myTrack = null, mineTab = 0;
+  let myId = null, myName = "", canSuggest = false, myTrack = null, mineTab = 0, myPerms = {};
+  let goTab = () => {};
   function setTabLabel(i, text) {
-    if (tabDefs[i] && tabDefs[i].btn) tabDefs[i].btn.textContent = text;
+    if (!tabDefs[i]) return;
+    if (tabDefs[i].btn) tabDefs[i].btn.textContent = text;
+    if (tabDefs[i].tile) tabDefs[i].tile.textContent = text;
   }
 
-  function buildTabs(defs) {
+  function buildTabs(defs, auto = true) {
     const bar = $("tabBar"), body = $("tabBody");
     tabDefs = defs;
     bar.replaceChildren();
@@ -542,7 +584,9 @@
       bar.append(d.btn);
     });
     reloadTab = () => current && select(current);
-    if (defs.length) select(defs[0]);
+    goTab = (i) => { if (defs[i]) select(defs[i]); };
+    if (auto && defs.length) select(defs[0]);
+    return select;
   }
 
   // --- المؤسس: الحسابات ---
@@ -573,6 +617,7 @@
         el("span", { class: "badge" }, ROLE_LABEL[a.role] || a.role),
         a.role === "student" && a.can_suggest ? el("span", { class: "badge alt" }, "طالب مميز") : null,
         a.elite ? el("span", { class: "badge founder" }, "★ نخبة") : null,
+        a.department ? el("span", { class: "badge alt" }, a.department) : null,
         Date.now() - new Date(a.created_at).getTime() < 864e5 ? el("span", { class: "badge founder" }, "جديد") : null);
       if (!isFounder) {
         const sel = el("select", null,
@@ -614,6 +659,32 @@
             reloadTab();
           });
           row.append(el2);
+          const pb = el("button", { class: "btn small secondary", type: "button" }, "الصلاحيات والقسم");
+          pb.addEventListener("click", async () => {
+            pb.disabled = true;
+            const { data, error: e } = await db.rpc("founder_get_permissions", { p_target: a.id });
+            pb.disabled = false;
+            if (e || !data || !data.length) return notify(rpcError(e), "error");
+            const cur = data[0];
+            $("tabBody").replaceChildren(formView("الصلاحيات والقسم: " + (a.full_name || ""), [
+              { key: "edit_content", label: "تعديل المحتوى (المواد والوحدات والدروس)", type: "check", value: cur.perms.edit_content },
+              { key: "delete_content", label: "حذف المحتوى", type: "check", value: cur.perms.delete_content },
+              { key: "manage_exams", label: "إدارة الامتحانات", type: "check", value: cur.perms.manage_exams },
+              { key: "grade_manual", label: "تصحيح الكومبوزيشن والسمري", type: "check", value: cur.perms.grade_manual },
+              { key: "department", label: "القسم (مثل: قسم التصحيح، مجموعة أ)", value: cur.department || "" }
+            ], async (v) => {
+              const { error: e2 } = await db.rpc("founder_set_permissions", {
+                p_target: a.id,
+                p_perms: { edit_content: v.edit_content, delete_content: v.delete_content, manage_exams: v.manage_exams, grade_manual: v.grade_manual },
+                p_department: v.department || null
+              });
+              if (e2) return e2;
+              reloadTab();
+              notify("تم الحفظ.", "ok");
+              return null;
+            }, reloadTab));
+          });
+          row.append(pb);
         }
       }
       wrap.append(row);
@@ -719,6 +790,7 @@
       el("div", { class: "pop-ar" + (p.role === "founder" ? " fnd" : "") }, t[0]),
       el("div", { class: "pop-en" }, t[1]),
       el("div", { class: "pop-name" }, p.full_name || "—"),
+      p.department ? el("div", { class: "pop-dept" }, p.department) : null,
       p.elite ? el("div", { class: "pop-elite" }, "★ من نخبة المشرفين · Elite Supervisor") : null);
     placePop(pop, anchor);
   }
@@ -1198,9 +1270,9 @@
 
   async function contentTab() {
     const box = el("div");
-    const canEdit = ["founder", "chief", "technical"].includes(currentRole);
-    const canDelete = ["founder", "chief"].includes(currentRole);
-    const isStaff = canEdit || currentRole === "assistant";
+    const canEdit = !!myPerms.edit_content;
+    const canDelete = !!myPerms.delete_content;
+    const isStaff = ["founder", "chief", "technical", "assistant"].includes(currentRole);
     const openIds = new Set();
     let tree = [];
 
@@ -1365,6 +1437,197 @@
     return box;
   }
 
+  // ---------- الواجهة الهادئة للمؤسس ----------
+  // مشهد عشوائي يُولَّد بأرقام فقط (لا صور خارجية): كثبان عند الغروب، أو النيل، أو ليل صحراوي
+  function sceneSvg() {
+    const r = (a, b) => a + Math.random() * (b - a);
+    const f = (n) => n.toFixed(1);
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    const W = 800, H = 320;
+    const uid = "s" + Math.floor(Math.random() * 1e6);
+    const dune = (base, amp, color) => {
+      const wl = r(80, 150), ph = r(0, 6.28);
+      let d = "M0 " + H;
+      for (let x = 0; x <= W; x += 16) d += " L" + x + " " + f(base + Math.sin(x / wl + ph) * amp + Math.sin(x / (wl * 2.3) + ph * 2) * amp * 0.5);
+      return '<path d="' + d + " L" + W + " " + H + ' Z" fill="' + color + '"/>';
+    };
+    const sky = (stops) => '<defs><linearGradient id="' + uid + 'g" x1="0" y1="0" x2="0" y2="1">' +
+      stops.map((c, i) => '<stop offset="' + f(i / (stops.length - 1)) + '" stop-color="' + c + '"/>').join("") +
+      '</linearGradient></defs><rect width="' + W + '" height="' + H + '" fill="url(#' + uid + 'g)"/>';
+    const sun = (x, y, rad) => '<circle cx="' + f(x) + '" cy="' + f(y) + '" r="' + f(rad * 2.2) + '" fill="#ffe2a8" opacity=".18"/>' +
+      '<circle cx="' + f(x) + '" cy="' + f(y) + '" r="' + f(rad) + '" fill="#fff1cf" opacity=".95"/>';
+    const palm = (x, y, sc) => {
+      let fr = "";
+      for (let i = 0; i < 7; i++) fr += '<path d="M0 0 Q 26 -24 60 -6 Q 30 -12 0 0Z" transform="rotate(' + f(i * 51 + r(-10, 10)) + ')"/>';
+      return '<g fill="#0f1a14" transform="translate(' + f(x) + " " + f(y) + ") scale(" + f(sc) + ')">' +
+        '<path d="M-3 0 C 2 -40 6 -80 2 -118 L 8 -118 C 12 -80 8 -40 5 0Z"/>' +
+        '<g transform="translate(5 -118)">' + fr + "</g></g>";
+    };
+    const scenes = [
+      () => {
+        const pal = pick([["#2b1b4d", "#c2477a", "#ffb26b"], ["#1d2b64", "#f8a75d", "#ffe0a3"], ["#3a1c71", "#d76d77", "#ffaf7b"]]);
+        const dp = pick([["#7a3b2e", "#4e2622", "#2c1616"], ["#8a5a3c", "#5b3a28", "#33231a"]]);
+        return sky(pal) + sun(r(180, 620), r(150, 200), r(30, 46)) + dune(215, 18, dp[0]) + dune(255, 16, dp[1]) + dune(292, 12, dp[2]);
+      },
+      () => {
+        const pal = pick([["#1d2b64", "#f8a75d", "#ffe0a3"], ["#2b1b4d", "#c2477a", "#ffb26b"], ["#243b55", "#e08a6a", "#ffd9a0"]]);
+        const sx = r(240, 560);
+        let s = sky(pal) + sun(sx, 178, 38);
+        s += '<rect y="205" width="' + W + '" height="115" fill="' + pal[1] + '" opacity=".6"/>';
+        for (let i = 0; i < 7; i++) {
+          const w = r(50, 150) * (1 - i * 0.08);
+          s += '<rect x="' + f(sx - w / 2) + '" y="' + f(210 + i * 14) + '" width="' + f(w) + '" height="3" rx="1.5" fill="#fff1cf" opacity="' + f(0.6 - i * 0.07) + '"/>';
+        }
+        s += '<path d="M0 320 L0 272 Q 200 254 400 276 T 800 264 L800 320Z" fill="#0f1a14"/>';
+        s += palm(r(40, 140), 282, r(0.6, 0.95)) + palm(r(600, 760), 280, r(0.6, 0.95)) + palm(r(150, 260), 290, r(0.45, 0.7));
+        return s;
+      },
+      () => {
+        let s = sky(["#050b1f", "#0d1b3d", "#1b3a63"]);
+        for (let i = 0; i < 70; i++) s += '<circle cx="' + f(r(0, W)) + '" cy="' + f(r(0, 200)) + '" r="' + f(r(0.6, 1.7)) + '" fill="#fff" opacity="' + f(r(0.35, 0.95)) + '"/>';
+        const mx = r(150, 650), my = r(60, 120);
+        s += '<mask id="' + uid + 'm"><rect width="' + W + '" height="' + H + '" fill="#fff"/><circle cx="' + f(mx + 14) + '" cy="' + f(my - 6) + '" r="30" fill="#000"/></mask>' +
+          '<circle cx="' + f(mx) + '" cy="' + f(my) + '" r="30" fill="#fdf3d0" mask="url(#' + uid + 'm)"/>';
+        return s + dune(240, 16, "#0a1530") + dune(278, 14, "#070f22") + dune(304, 10, "#040a18");
+      }
+    ];
+    return '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="مشهد هادئ">' + pick(scenes)() + "</svg>";
+  }
+
+  let homeChips = null;
+  function updateHomeChips(b) {
+    if (!homeChips) return;
+    const items = [];
+    const add = (n, text, hot) => { if (n) items.push(el("span", { class: "chip" + (hot ? " hot" : "") }, n + " " + text)); };
+    add(b.fresh, "اقتراح جديد", true);
+    add(b.pending, "طلب تعيين بانتظار قرارك", true);
+    add(b.events, "رد على تحويلاتك", true);
+    add(b.newToday, "حساب جديد اليوم", false);
+    if (!items.length) items.push(el("span", { class: "chip" }, "لا شيء ينتظرك الآن."));
+    homeChips.replaceChildren(...items);
+  }
+
+  function founderHome(defs, openDef) {
+    const art = el("div", { class: "hero-art" });
+    art.innerHTML = sceneSvg();
+    const hero = el("div", { class: "hero" }, art,
+      el("div", { class: "hero-text" }, crownEl(),
+        el("h2", null, timeGreeting() + "، أهلاً بمؤسس لمّة"),
+        el("p", null, "المنصة كلها بين يديك.")));
+    homeChips = el("div", { class: "chips" });
+    const tiles = el("div", { class: "tiles" });
+    defs.forEach((d) => {
+      const t = el("button", { class: "tile", type: "button" }, d.label);
+      t.addEventListener("click", () => openDef(d));
+      d.tile = t;
+      tiles.append(t);
+    });
+    return [hero, homeChips, tiles];
+  }
+
+  function showHome() {
+    $("sectionBar").hidden = true;
+    $("tabBody").hidden = true;
+    $("tabBody").replaceChildren();
+    $("banner").hidden = false;
+    notify("");
+  }
+
+  // ---------- الصفحة الرئيسية الهادئة للمؤسس ----------
+  const PALM = '<g id="palm"><path d="M0 0 Q6 -40 0 -80" stroke="#1b1712" stroke-width="4" fill="none"/><path d="M0 -80 q-28 -6 -44 18 M0 -80 q28 -6 44 18 M0 -80 q-22 -24 -46 -10 M0 -80 q22 -24 46 -10 M0 -80 q-2 -28 -12 -40" stroke="#1b1712" stroke-width="3.5" fill="none" stroke-linecap="round"/></g>';
+  const svgWrap = (inner) => '<svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' + inner + '</svg>';
+  const grad = (id, stops) => '<linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' +
+    stops.map(([o, c]) => '<stop offset="' + o + '" stop-color="' + c + '"/>').join("") + '</linearGradient>';
+  function stars(n) {
+    let out = "", seed = 7;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let i = 0; i < n; i++) {
+      out += '<circle cx="' + (rnd() * 800).toFixed(0) + '" cy="' + (rnd() * 210).toFixed(0) + '" r="' + (0.6 + rnd() * 1.4).toFixed(1) +
+        '" fill="#fff" opacity="' + (0.4 + rnd() * 0.6).toFixed(2) + '"/>';
+    }
+    return out;
+  }
+  // مشاهد ثابتة مرسومة بالكود (لا تحتاج إنترنت ولا حقوق صور)
+  const SCENES = [
+    // النيل عند الغروب
+    () => svgWrap('<defs>' + grad("sk", [[0, "#3b2a5c"], [.55, "#e2635f"], [1, "#ffc27a"]]) + grad("rv", [[0, "#ffb36b"], [1, "#6d3a5a"]]) + PALM + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/><circle cx="560" cy="172" r="44" fill="#ffe0a3"/>' +
+      '<rect y="182" width="800" height="118" fill="url(#rv)"/>' +
+      '<rect x="520" y="190" width="80" height="4" rx="2" fill="#ffe0a3" opacity=".6"/><rect x="535" y="202" width="50" height="4" rx="2" fill="#ffe0a3" opacity=".45"/>' +
+      '<path d="M0 184 Q200 178 400 186 T800 184 V196 H0Z" fill="#231a2e"/>' +
+      '<use href="#palm" transform="translate(90 188)"/><use href="#palm" transform="translate(150 190) scale(.8)"/><use href="#palm" transform="translate(690 188) scale(.9)"/>'),
+    // كثبان عند الفجر
+    () => svgWrap('<defs>' + grad("sk", [[0, "#7c6aa6"], [.5, "#f3a683"], [1, "#fde3b0"]]) + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/><circle cx="400" cy="150" r="38" fill="#fff1c9"/>' +
+      '<path d="M0 200 Q150 150 300 190 T600 180 T800 170 V300 H0Z" fill="#e8b47a"/>' +
+      '<path d="M0 240 Q200 190 380 230 T800 210 V300 H0Z" fill="#d59a5f"/>' +
+      '<path d="M0 280 Q250 235 500 270 T800 255 V300 H0Z" fill="#b97a45"/>'),
+    // ليل صحراوي
+    () => svgWrap('<defs>' + grad("sk", [[0, "#070b1e"], [.6, "#1b2a5c"], [1, "#34477e"]]) + PALM + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/>' + stars(70) +
+      '<circle cx="620" cy="78" r="30" fill="#f4efd8"/><circle cx="632" cy="70" r="26" fill="#1b2a5c" opacity=".55"/>' +
+      '<path d="M0 230 Q200 190 400 225 T800 205 V300 H0Z" fill="#10162f"/><path d="M0 270 Q250 240 520 268 T800 255 V300 H0Z" fill="#0a0f22"/>' +
+      '<use href="#palm" transform="translate(110 236) scale(.9)"/><use href="#palm" transform="translate(165 240) scale(.7)"/>'),
+    // تلال خضراء في الصباح
+    () => svgWrap('<defs>' + grad("sk", [[0, "#8fd0f5"], [1, "#eaf6ff"]]) + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/><circle cx="640" cy="80" r="34" fill="#fff3b0"/>' +
+      '<ellipse cx="200" cy="70" rx="70" ry="16" fill="#fff" opacity=".7"/><ellipse cx="260" cy="82" rx="50" ry="12" fill="#fff" opacity=".6"/>' +
+      '<path d="M0 190 Q200 130 420 180 T800 160 V300 H0Z" fill="#7bbf6a"/>' +
+      '<path d="M0 235 Q240 185 500 230 T800 210 V300 H0Z" fill="#5aa055"/>' +
+      '<path d="M0 278 Q260 245 520 272 T800 260 V300 H0Z" fill="#3f8347"/>'),
+    // شروق على البحر
+    () => svgWrap('<defs>' + grad("sk", [[0, "#274a78"], [.6, "#f19a6b"], [1, "#ffd9a0"]]) + grad("sea", [[0, "#ffcb8a"], [1, "#22406b"]]) + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/><circle cx="400" cy="170" r="46" fill="#fff0c4"/>' +
+      '<rect y="172" width="800" height="128" fill="url(#sea)"/>' +
+      '<rect x="360" y="182" width="80" height="4" rx="2" fill="#fff0c4" opacity=".7"/><rect x="372" y="196" width="56" height="4" rx="2" fill="#fff0c4" opacity=".55"/>' +
+      '<rect x="384" y="210" width="32" height="4" rx="2" fill="#fff0c4" opacity=".4"/>'),
+    // جبال في الساعة الزرقاء
+    () => svgWrap('<defs>' + grad("sk", [[0, "#1e2a52"], [.55, "#8f7fb0"], [1, "#f0b0a0"]]) + '</defs>' +
+      '<rect width="800" height="300" fill="url(#sk)"/>' + stars(30) +
+      '<ellipse cx="240" cy="110" rx="90" ry="14" fill="#fff" opacity=".18"/><ellipse cx="560" cy="90" rx="110" ry="12" fill="#fff" opacity=".15"/>' +
+      '<path d="M0 220 L120 130 L200 190 L300 100 L420 200 L540 120 L660 190 L800 140 V300 H0Z" fill="#4a4a7a"/>' +
+      '<path d="M0 260 L150 190 L260 240 L400 170 L560 250 L700 200 L800 240 V300 H0Z" fill="#2b2b52"/>')
+  ];
+
+  function founderHome(b) {
+    const first = (myName || "").trim().split(/\s+/)[0];
+    const scene = el("div", { class: "scene" });
+    let last = -1;
+    function paint() {
+      let n;
+      do { n = Math.floor(Math.random() * SCENES.length); } while (n === last && SCENES.length > 1);
+      last = n;
+      scene.innerHTML = SCENES[n]();
+    }
+    paint();
+    const waiting = (b.fresh || 0) + (b.events || 0) + (b.pending || 0);
+    const more = el("button", { class: "linkbtn", type: "button" }, "مشهد آخر");
+    more.addEventListener("click", paint);
+    const hero = el("div", { class: "hero" }, scene,
+      el("div", { class: "hero-text" },
+        el("h2", null, timeGreeting() + (first ? "، " + first : "")),
+        el("p", null, waiting ? "بانتظارك " + waiting + (waiting === 1 ? " أمر" : " أمور") + " حين تشاء." : "كل شيء هادئ اليوم."),
+        more));
+    const tile = (label, index, count) => {
+      const t = el("button", { class: "door", type: "button" }, el("strong", null, label),
+        count ? el("span", { class: "badge founder" }, String(count)) : null);
+      t.addEventListener("click", () => goTab(index));
+      return t;
+    };
+    const doors = el("div", { class: "doors" },
+      tile("الاقتراحات", 4, (b.fresh || 0) + (b.events || 0)),
+      tile("طلبات التعيين", 3, b.pending),
+      tile("الحسابات", 1, b.newToday),
+      tile("المواد", 5, 0),
+      tile("الحدود", 2, 0));
+    const st = (n, label) => el("div", { class: "stat" }, el("b", null, n === null ? "—" : n), el("span", null, label));
+    const glance = el("details", null, el("summary", null, "نظرة سريعة"),
+      el("div", { class: "stats" },
+        st(b.total, "إجمالي الحسابات"), st(b.newToday, "حسابات جديدة اليوم"), st(b.vacant, "مناصب شاغرة"),
+        st(b.fresh, "اقتراحات جديدة"), st(b.pending, "طلبات تعيين")));
+    return el("div", null, hero, doors, glance);
+  }
+
   async function founderBriefing() {
     const out = { total: null, pending: null, fresh: null, events: null, newToday: null, vacant: null };
     try {
@@ -1434,6 +1697,10 @@
 
   async function renderApp(session) {
     show("appView");
+    document.body.classList.remove("calm");
+    $("sectionBar").hidden = true;
+    $("tabBody").hidden = false;
+    $("banner").hidden = false;
     const user = session.user;
     myId = user.id;
     let name = (user.user_metadata && user.user_metadata.full_name) || "";
@@ -1443,6 +1710,8 @@
     try {
       const r = await db.rpc("current_role_name");
       if (!r.error && r.data) role = r.data;
+      const pr = await db.rpc("my_permissions");
+      myPerms = (!pr.error && pr.data) || {};
       const p = await db.from("profiles").select("full_name,can_suggest,track").eq("id", user.id).maybeSingle();
       if (p.data) {
         if (p.data.full_name) name = p.data.full_name;
@@ -1470,9 +1739,9 @@
     const contentTabDef = { label: role === "student" ? "موادي" : "المواد", render: contentTab };
     if (role === "founder") {
       const b = await founderBriefing();
-      $("banner").replaceChildren(...founderBanner(b));
       showGate();
       buildTabs([
+        { label: "الرئيسية", render: async () => founderHome(await founderBriefing()) },
         { label: "الحسابات", render: accountsTab },
         { label: "الحدود", render: limitsTab },
         { label: "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""), render: requestsTab },
@@ -1508,9 +1777,8 @@
     try {
       if (currentRole === "founder") {
         const b = await founderBriefing();
-        $("banner").replaceChildren(...founderBanner(b));
-        setTabLabel(2, "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""));
-        setTabLabel(3, "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""));
+        setTabLabel(3, "طلبات التعيين" + (b.pending ? " (" + b.pending + ")" : ""));
+        setTabLabel(4, "الاقتراحات" + ((b.fresh || 0) + (b.events || 0) ? " (" + ((b.fresh || 0) + (b.events || 0)) + ")" : ""));
         return;
       }
       const isSup = ["chief", "technical", "assistant"].includes(currentRole);
@@ -1527,6 +1795,8 @@
   }
   setInterval(refreshBadges, 60000);
   document.addEventListener("visibilitychange", refreshBadges);
+
+  $("homeBtn").addEventListener("click", showHome);
 
   $("logoutBtn").addEventListener("click", async () => {
     try { sessionStorage.removeItem("gateShown"); } catch (e) { /* ignore */ }
@@ -1546,6 +1816,7 @@
       $("tabBody").replaceChildren();
       $("banner").replaceChildren();
       document.body.classList.remove("founder");
+      document.body.classList.remove("calm");
       currentRole = null;
       tabDefs = [];
       show("authView");
