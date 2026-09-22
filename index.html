@@ -1478,15 +1478,9 @@
     return box;
   }
 
-  // ---------- الامتحانات: أدوات الإنشاء ----------
-  const EXAM_GROUPS = [
-    { title: "Prefix", types: ["prefix"] },
-    { title: "Suffix", types: ["suffix"] },
-    { title: "Grammar", types: ["grammar"] },
-    { title: "Comprehension", types: ["circle", "truefalse", "written"] }
-  ];
-  const EXAM_ADD = { prefix: "+ سؤال", suffix: "+ سؤال", grammar: "+ سؤال", circle: "+ اختيار", truefalse: "+ صح/خطأ", written: "+ كتابي" };
-  const EXAM_KIND = { circle: "اختيار", truefalse: "صح/خطأ", written: "كتابي" };
+  // ---------- الامتحانات: نظام الأقسام ----------
+  const SEC_LABEL = { grammar: "Grammar (قواعد)", prefix: "Prefix (بادئات)", suffix: "Suffix (لواحق)", comprehension: "Comprehension (قطعة فهم)", literature: "Literature (أدب)" };
+  const Q_LABEL = { circle: "اختيار من متعدد", truefalse: "صح / خطأ", written: "كتابي" };
 
   async function examsTab() {
     const box = el("div");
@@ -1499,9 +1493,18 @@
       return b;
     };
     const asLines = (t) => (t || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
-    const asList = (t) => (t || "").split(/[\n,،]+/).map((x) => x.trim()).filter(Boolean);
-    const sum = (arr) => arr.reduce((n, q) => n + Number(q.points || 0), 0);
+    const sum = (secs) => secs.reduce((n, s) => n + s.questions.reduce((m, q) => m + Number(q.points || 0), 0), 0);
+    const qCount = (secs) => secs.reduce((n, s) => n + s.questions.length, 0);
     const levelLabel = (id) => (levels.find((l) => l.id === id) || {}).label || "";
+
+    async function uploadExamFile(file) {
+      if (file.size > 10 * 1024 * 1024) throw new Error("size");
+      const ext = ((file.name.split(".").pop() || "bin").toLowerCase()).replace(/[^a-z0-9]/g, "").slice(0, 5) || "bin";
+      const path = Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + "." + ext;
+      const { error } = await db.storage.from("exam-files").upload(path, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      return db.storage.from("exam-files").getPublicUrl(path).data.publicUrl;
+    }
 
     async function loadLevels() {
       const { data, error } = await db.rpc("list_content");
@@ -1532,20 +1535,14 @@
     }
 
     function editExam(cur) {
-      const aff = (cur && cur.affixes) || {};
       swap(formView(cur ? "تعديل الامتحان" : "امتحان جديد", [
         { key: "title", label: "عنوان الامتحان", value: cur && cur.title },
         { key: "grade", label: "المادة والمستوى", type: "select", value: cur ? cur.grade_id : "",
           options: [["", "اختر…"], ...levels.map((l) => [l.id, l.label])] },
-        { key: "prefix", label: "الإضافات القبلية Prefix (تظهر في مستطيل أعلى الأسئلة، افصل بينها بفاصلة)", value: (aff.prefix || []).join(", "), dir: "ltr" },
-        { key: "suffix", label: "الإضافات البعدية Suffix", value: (aff.suffix || []).join(", "), dir: "ltr" },
         { key: "published", label: "منشور (يظهر للطلاب)", type: "check", value: cur ? cur.published : false }
       ], async (v) => {
         if (!v.title || !v.grade) return { message: "BAD_INPUT" };
-        const r = await db.rpc("save_exam", {
-          p_id: cur ? cur.id : null, p_grade: v.grade, p_title: v.title,
-          p_affixes: { prefix: asList(v.prefix), suffix: asList(v.suffix) }, p_published: v.published
-        });
+        const r = await db.rpc("save_exam", { p_id: cur ? cur.id : null, p_grade: v.grade, p_title: v.title, p_published: v.published });
         if (r.error) return r.error;
         await editor(r.data);
         notify("تم الحفظ.", "ok");
@@ -1565,48 +1562,42 @@
       swap(el("p", { class: "muted" }, "جاري التحميل…"));
       const { data, error } = await db.rpc("get_exam", { p_id: id });
       if (error || !data) return swap(el("p", { class: "msg error" }, "تعذّر فتح الامتحان."));
-      const ex = data.exam, passages = data.passages || [], qs = data.questions || [];
+      const ex = data.exam, passages = data.passages || [], secs = data.sections || [];
       const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى الامتحانات");
       back.addEventListener("click", list);
       const out = [back, el("h2", { style: "margin-top:8px" }, ex.title),
-        el("div", { class: "hint" }, levelLabel(ex.grade_id) + " · " + (ex.published ? "منشور" : "مسودة") + " · المجموع " + sum(qs) + " درجة"),
+        el("div", { class: "hint" }, levelLabel(ex.grade_id) + " · " + (ex.published ? "منشور" : "مسودة") + " · المجموع " + sum(secs) + " درجة"),
         el("div", { class: "actions" }, btn("تعديل بيانات الامتحان", () => editExam(ex)),
           canDelete ? btn("حذف الامتحان", () => remove("exam", ex.id), "ghost-red") : null)];
-      const aff = ex.affixes || {};
-      ["prefix", "suffix"].forEach((k) => {
-        if ((aff[k] || []).length) out.push(el("div", { class: "hint", style: "direction:ltr;text-align:left" }, k + ": " + aff[k].join(" · ")));
-      });
 
-      out.push(el("div", { class: "topbar" }, el("strong", null, "قطع الفهم (" + passages.length + ")"), btn("+ قطعة", () => editPassage(ex, null))));
+      out.push(el("div", { class: "topbar" }, el("strong", null, "قطع الفهم (" + passages.length + ")"), btn("+ قطعة", () => editPassage(ex, passages, null))));
       passages.forEach((p) => out.push(el("div", { class: "row" },
         el("span", { class: "grow", dir: "auto" }, p.title || "بدون عنوان"),
-        btn("تعديل", () => editPassage(ex, p)),
+        btn("تعديل", () => editPassage(ex, passages, p)),
         canDelete ? btn("حذف", () => remove("passage", p.id, ex.id), "ghost-red") : null)));
 
-      EXAM_GROUPS.forEach((g) => {
-        const items = qs.filter((q) => g.types.includes(q.qtype));
-        out.push(el("div", { class: "topbar" },
-          el("strong", null, g.title + " (" + items.length + " · " + sum(items) + " درجة)"),
-          ...g.types.map((t) => btn(EXAM_ADD[t], () => editQuestion(ex, passages, t, null)))));
-        items.forEach((q, i) => {
-          const pv = q.prompt.length > 70 ? q.prompt.slice(0, 70) + "…" : q.prompt;
-          out.push(el("div", { class: "row" },
-            el("span", { class: "grow", dir: "auto" }, (i + 1) + ". " + pv),
-            g.types.length > 1 ? el("span", { class: "badge alt" }, EXAM_KIND[q.qtype]) : null,
-            el("span", { class: "badge" }, String(Number(q.points))),
-            btn("تعديل", () => editQuestion(ex, passages, q.qtype, q)),
-            canDelete ? btn("حذف", () => remove("question", q.id, ex.id), "ghost-red") : null));
-        });
+      out.push(el("div", { class: "topbar" }, el("strong", null, "أقسام الامتحان (" + secs.length + " · " + qCount(secs) + " سؤال)"),
+        btn("+ قسم", () => pickSectionKind(ex, passages))));
+      secs.forEach((s, i) => {
+        const head = el("div", { class: "row" },
+          el("span", { class: "grow" }, "القسم " + (i + 1) + " — " + SEC_LABEL[s.kind] +
+            (s.kind === "comprehension" ? " (" + ((passages.find((p) => p.id === s.passage_id) || {}).title || "قطعة") + ")" : "") +
+            (s.kind === "literature" ? " (" + s.lit_ref + ")" : "")),
+          el("span", { class: "badge" }, s.questions.length + " سؤال"),
+          btn("فتح", () => sectionEditor(ex, passages, s)),
+          canDelete ? btn("حذف القسم", () => remove("section", s.id, ex.id), "ghost-red") : null);
+        out.push(head);
+        if ((s.affixes || []).length) out.push(el("div", { class: "hint", style: "direction:ltr;text-align:left" }, s.kind + ": " + s.affixes.join(" · ")));
       });
       swap(el("div", null, ...out));
     }
 
-    function editPassage(ex, p) {
+    function editPassage(ex, passages, p) {
       swap(formView(p ? "تعديل القطعة" : "قطعة جديدة", [
         { key: "title", label: "عنوان القطعة", value: p && p.title },
         { key: "body", label: "نص القطعة", type: "textarea", value: p && p.body,
-          hint: "اكتب النص بنفسك، أو حمّله من ملف نصي (.txt) عبر خانة الملف أدناه. استخدم نصاً من تأليفك أو بإذن صاحبه." },
-        { key: "file", label: "ملف مرفق (PDF أو صورة حتى 10 ميغابايت، أو ملف .txt لتحميل نصه في الخانة أعلاه)", type: "file", value: p && p.file_url, textInto: "body" }
+          hint: "اكتب النص بنفسك، أو حمّله من ملف .txt عبر خانة الملف أدناه." },
+        { key: "file", label: "ملف مرفق (PDF أو صورة حتى 10 ميغابايت، أو .txt لتحميل نصه أعلاه)", type: "file", value: p && p.file_url, textInto: "body" }
       ], async (v) => {
         const r = await db.rpc("save_passage", { p_id: p ? p.id : null, p_exam: ex.id, p_title: v.title, p_body: v.body, p_file: v.file || null, p_order: p ? p.sort_order : 0 });
         if (r.error) return r.error;
@@ -1616,56 +1607,35 @@
       }, () => editor(ex.id)));
     }
 
-    function editQuestion(ex, passages, type, q) {
-      const fill = ["prefix", "suffix", "grammar"].includes(type);
-      const f = [];
-      if (!fill) f.push({ key: "passage", label: "القطعة المرتبطة بالسؤال", type: "select", value: (q && q.passage_id) || "",
-        options: [["", "بدون قطعة"], ...passages.map((p) => [p.id, p.title || "بدون عنوان"])] });
-      f.push({ key: "prompt", label: fill ? "الجملة — ضع ___ مكان الفراغ (سطر أو سطران فقط)" : "نص السؤال", type: "textarea", small: true, value: q && q.prompt });
-      if (fill) {
-        f.push({ key: "base", label: "الكلمة الأصلية (تظهر بين قوسين بعد نقطة الجملة)", value: q && q.base_word, dir: "ltr" });
-        f.push({ key: "answers", label: "الإجابة الصحيحة الكاملة — كل إجابة مقبولة في سطر (حتى اثنتين)", type: "textarea", small: true, dir: "ltr", value: q ? (q.answers || []).join("\n") : "" });
-      }
-      if (type === "circle") {
-        f.push({ key: "options", label: "الخيارات — كل خيار في سطر", type: "textarea", small: true, dir: "auto", value: q ? (q.options || []).join("\n") : "" });
-        f.push({ key: "correct", label: "رقم الخيار الصحيح (1 = الأول)", type: "number", value: q ? (q.options || []).indexOf((q.answers || [])[0]) + 1 : 1 });
-      }
-      if (type === "truefalse") f.push({ key: "tf", label: "الإجابة الصحيحة", type: "select", value: (q && (q.answers || [])[0]) || "true", options: [["true", "صحيح (True)"], ["false", "خطأ (False)"]] });
-      if (type === "written") {
-        f.push({ key: "model", label: "السطر الصحيح من القطعة (الإجابة النموذجية)", type: "textarea", small: true, dir: "ltr", value: q && q.model_text,
-          hint: "ينسخ الطالب جزءاً من القطعة كإجابة." });
-        f.push({ key: "minc", label: "أقل عدد كلمات صحيحة من السطر النموذجي", type: "number", value: q ? q.min_correct : 2 });
-        f.push({ key: "maxx", label: "أقصى عدد كلمات من خارج السطر النموذجي", type: "number", value: q ? q.max_extra : 3 });
-      }
-      f.push({ key: "points", label: "الدرجة", type: "decimal", value: q ? q.points : 1 });
-      f.push({ key: "order", label: "الترتيب (0 = تلقائي في آخر القائمة)", type: "number", value: q ? q.sort_order : 0 });
-      if (!fill) f.push({ key: "file", label: "ملف مرفق (اختياري: PDF أو صورة حتى 10 ميغابايت)", type: "file", value: q && q.file_url });
+    function pickSectionKind(ex, passages) {
+      const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع");
+      back.addEventListener("click", () => editor(ex.id));
+      const kids = [back, el("h2", { style: "margin-top:8px" }, "قسم جديد — اختر النوع")];
+      Object.entries(SEC_LABEL).forEach(([k, label]) => {
+        if (k === "comprehension" && !passages.length) return;
+        kids.push(btn(label, () => sectionForm(ex, passages, k, null), "primary"));
+      });
+      if (!passages.length) kids.push(el("div", { class: "hint" }, "أضف قطعة فهم أولاً لتتمكن من اختيار قسم Comprehension."));
+      swap(el("div", null, ...kids));
+    }
 
-      const titles = { prefix: "سؤال Prefix", suffix: "سؤال Suffix", grammar: "سؤال Grammar", circle: "سؤال اختيار من متعدد", truefalse: "سؤال صح أو خطأ", written: "سؤال فهم كتابي" };
-      swap(formView((q ? "تعديل " : "جديد: ") + titles[type], f, async (v) => {
-        if (!v.prompt || !(v.points > 0)) return { message: "BAD_INPUT" };
-        let options = null, answers = [], model = null;
-        if (fill) {
-          if (!/_{3,}/.test(v.prompt)) return { message: "NEED_BLANK" };
-          answers = asLines(v.answers);
-          if (!v.base || !answers.length) return { message: "NEED_ANSWER" };
-          if (answers.length > 2) return { message: "TOO_MANY" };
-        } else if (type === "circle") {
-          options = asLines(v.options);
-          if (options.length < 2) return { message: "NEED_OPTIONS" };
-          if (!(v.correct >= 1 && v.correct <= options.length)) return { message: "BAD_INPUT" };
-          answers = [options[v.correct - 1]];
-        } else if (type === "truefalse") {
-          answers = [v.tf];
-        } else {
-          if (!v.model) return { message: "NEED_ANSWER" };
-          model = v.model;
-        }
-        const r = await db.rpc("save_question", {
-          p_id: q ? q.id : null, p_exam: ex.id, p_type: type, p_passage: v.passage || null, p_prompt: v.prompt,
-          p_base: fill ? v.base : null, p_options: options, p_answers: answers, p_model: model,
-          p_min: type === "written" ? v.minc : 2, p_max: type === "written" ? v.maxx : 3,
-          p_points: v.points, p_file: v.file || null, p_order: v.order
+    function sectionForm(ex, passages, kind, cur) {
+      const f = [];
+      if (kind === "prefix" || kind === "suffix")
+        f.push({ key: "affixes", label: (kind === "prefix" ? "قائمة البادئات Prefixes" : "قائمة اللواحق Suffixes") + " — كل واحدة في سطر (تظهر في مستطيل أعلى الأسئلة)",
+          type: "textarea", small: true, dir: "ltr", value: cur ? (cur.affixes || []).join("\n") : "" });
+      if (kind === "comprehension")
+        f.push({ key: "passage", label: "القطعة المرتبطة بهذا القسم", type: "select", value: cur ? cur.passage_id : "",
+          options: passages.map((p) => [p.id, p.title || "بدون عنوان"]) });
+      if (kind === "literature")
+        f.push({ key: "lit", label: "المرجع الأدبي (مثال: Treasure Island)", value: cur && cur.lit_ref });
+      if (!f.length) f.push({ key: "note", label: "لا حاجة لبيانات إضافية لهذا القسم.", type: "text", value: "" });
+      swap(formView((cur ? "تعديل قسم " : "قسم جديد: ") + SEC_LABEL[kind], f, async (v) => {
+        const affixes = (kind === "prefix" || kind === "suffix") ? asLines(v.affixes) : [];
+        const r = await db.rpc("save_section", {
+          p_id: cur ? cur.id : null, p_exam: ex.id, p_kind: kind, p_affixes: affixes,
+          p_passage: kind === "comprehension" ? (v.passage || null) : null,
+          p_lit_ref: kind === "literature" ? v.lit : null, p_order: cur ? cur.sort_order : 0
         });
         if (r.error) return r.error;
         await editor(ex.id);
@@ -1674,9 +1644,175 @@
       }, () => editor(ex.id)));
     }
 
+    // ---- محرر أسئلة القسم: إضافة دفعية + معاينة حية ----
+    function sectionEditor(ex, passages, sec) {
+      const back = el("button", { class: "linkbtn", type: "button" }, "→ رجوع إلى الامتحان");
+      back.addEventListener("click", () => editor(ex.id));
+      const passageTitle = sec.kind === "comprehension" ? ((passages.find((p) => p.id === sec.passage_id) || {}).title || "") : "";
+      const out = [back, el("h2", { style: "margin-top:8px" }, "القسم — " + SEC_LABEL[sec.kind] + (passageTitle ? " (" + passageTitle + ")" : sec.kind === "literature" ? " (" + sec.lit_ref + ")" : "")),
+        el("div", { class: "actions" }, btn("تعديل بيانات القسم", () => sectionForm(ex, passages, sec.kind, sec)))];
+
+      if ((sec.affixes || []).length) {
+        out.push(el("div", { class: "affix-box", style: "border:1px solid var(--line,#ccc);border-radius:8px;padding:8px 12px;margin:8px 0;direction:ltr;text-align:left" },
+          el("strong", null, sec.kind === "prefix" ? "Prefixes: " : "Suffixes: "), sec.affixes.join(" - ")));
+      }
+
+      out.push(el("div", { class: "topbar" }, el("strong", null, "الأسئلة الحالية (" + sec.questions.length + ")")));
+      sec.questions.forEach((q, i) => {
+        out.push(el("div", { class: "row" },
+          el("span", { class: "grow", dir: "auto" }, (i + 1) + ". " + previewText(sec, q)),
+          sec.kind !== "grammar" && sec.kind !== "prefix" && sec.kind !== "suffix" ? el("span", { class: "badge alt" }, Q_LABEL[q.qtype]) : null,
+          el("span", { class: "badge" }, String(Number(q.points))),
+          btn("تعديل", () => sectionEditor.editOne(q)),
+          canDelete ? btn("حذف", () => remove("question", q.id, ex.id).then(() => sectionEditorRefresh(ex, passages, sec.id)), "ghost-red") : null));
+      });
+
+      const countInput = el("input", { type: "number", min: "1", max: "30", value: "1", style: "width:80px;display:inline-block" });
+      const typeSelect = (sec.kind === "comprehension" || sec.kind === "literature")
+        ? el("select", null, el("option", { value: "circle" }, Q_LABEL.circle), el("option", { value: "truefalse" }, Q_LABEL.truefalse), el("option", { value: "written" }, Q_LABEL.written))
+        : null;
+      const addBtn = el("button", { class: "btn small primary", type: "button" }, "إنشاء الخانات");
+      const row1 = el("div", { class: "row" }, el("span", null, "عدد الأسئلة الجديدة:"), countInput, typeSelect, addBtn);
+      const batchHost = el("div");
+      out.push(row1, batchHost);
+      addBtn.addEventListener("click", () => {
+        const n = Math.max(1, Math.min(30, parseInt(countInput.value, 10) || 1));
+        const t = typeSelect ? typeSelect.value : sec.kind;
+        batchHost.replaceChildren(buildBatch(ex, sec, t, n));
+      });
+
+      const box2 = el("div", null, ...out);
+      sectionEditor.editOne = (q) => {
+        batchHost.replaceChildren(buildBatch(ex, sec, q.qtype, 1, q));
+        batchHost.scrollIntoView({ behavior: "smooth" });
+      };
+      swap(box2);
+    }
+    async function sectionEditorRefresh(ex, passages, secId) {
+      const { data } = await db.rpc("get_exam", { p_id: ex.id });
+      const sec = (data.sections || []).find((s) => s.id === secId);
+      if (sec) sectionEditor(ex, data.passages || passages, sec); else editor(ex.id);
+    }
+
+    function previewText(sec, q) {
+      if (["prefix", "suffix", "grammar"].includes(q.qtype)) {
+        const shown = q.prompt.replace(/_{3,}/, "______");
+        return shown + " (" + (q.base_word || "") + ")";
+      }
+      if (q.qtype === "circle") return q.prompt + "  [" + (q.options || []).join(" / ") + "]";
+      if (q.qtype === "truefalse") return q.prompt + "  ( T / F )";
+      return q.prompt;
+    }
+
+    // ينشئ n بطاقة سؤال (فارغة أو معبأة) مع معاينة حية، وزر حفظ واحد للجميع
+    function buildBatch(ex, sec, qtype, n, existing) {
+      const fill = ["prefix", "suffix", "grammar"].includes(qtype);
+      const cards = [];
+      for (let i = 0; i < n; i++) cards.push(makeCard(existing || null));
+      const saveAll = el("button", { class: "btn", type: "button" }, existing ? "حفظ" : "حفظ الكل (" + n + ")");
+      const cancel = el("button", { class: "btn small secondary", type: "button" }, "إلغاء");
+      cancel.addEventListener("click", () => sectionEditorRefresh(ex, null, sec.id));
+      saveAll.addEventListener("click", async () => {
+        saveAll.disabled = true;
+        for (const c of cards) {
+          const v = c.getValues();
+          let options = null, answers = [], model = null;
+          if (fill) {
+            if (!/_{3,}/.test(v.prompt)) return fail("NEED_BLANK");
+            answers = asLines(v.answers);
+            if (!v.base || !answers.length) return fail("NEED_ANSWER");
+            if (answers.length > 2) return fail("TOO_MANY");
+          } else if (qtype === "circle") {
+            options = asLines(v.options);
+            if (options.length < 2) return fail("NEED_OPTIONS");
+            if (!(v.correct >= 1 && v.correct <= options.length)) return fail("BAD_INPUT");
+            answers = [options[v.correct - 1]];
+          } else if (qtype === "truefalse") {
+            answers = [v.tf];
+          } else {
+            if (!v.model) return fail("NEED_ANSWER");
+            model = v.model;
+          }
+          let fileUrl = v.fileVal || null;
+          if (v.fileInput && v.fileInput.files[0]) {
+            try { fileUrl = await uploadExamFile(v.fileInput.files[0]); }
+            catch (e) { return fail(null, "تعذّر رفع الملف. PDF أو صورة حتى 10 ميغابايت."); }
+          }
+          const r = await db.rpc("save_question", {
+            p_id: existing ? existing.id : null, p_section: sec.id, p_type: qtype, p_prompt: v.prompt,
+            p_base: fill ? v.base : null, p_options: options, p_answers: answers, p_model: model,
+            p_min: qtype === "written" ? v.minc : 2, p_max: qtype === "written" ? v.maxx : 3,
+            p_points: v.points, p_file: fill ? null : fileUrl, p_order: existing ? existing.sort_order : 0
+          });
+          if (r.error) return fail(r.error);
+        }
+        await sectionEditorRefresh(ex, null, sec.id);
+        notify("تم الحفظ.", "ok");
+        function fail(err, msg) { saveAll.disabled = false; notify(msg || rpcError(err), "error"); }
+      });
+      return el("div", { class: "batch" }, ...cards.map((c) => c.node), el("div", { class: "actions" }, saveAll, cancel));
+
+      function makeCard(q) {
+        const wrap = el("div", { style: "border:1px solid var(--line,#ddd);border-radius:8px;padding:10px;margin:8px 0" });
+        const prompt = el("textarea", { style: "min-height:70px" });
+        prompt.value = (q && q.prompt) || "";
+        const preview = el("div", { class: "hint", dir: "auto" });
+        const updatePreview = () => {
+          let t = prompt.value || "…";
+          if (fill) t = t.replace(/_{3,}/, "______") + (base ? " (" + base.value + ")" : "");
+          preview.textContent = "المعاينة: " + t;
+        };
+        prompt.addEventListener("input", updatePreview);
+        const kids = [el("label", null, "نص السؤال (ضع ___ مكان الفراغ إن كان يحتاج)"), prompt];
+        let base, answers, options, correct, tf, model, minc, maxx;
+        if (fill) {
+          base = el("input", { type: "text" }); base.value = (q && q.base_word) || ""; base.dir = "ltr";
+          base.addEventListener("input", updatePreview);
+          answers = el("textarea", { style: "min-height:50px" }); answers.dir = "ltr";
+          answers.value = q ? (q.answers || []).join("\n") : "";
+          kids.push(el("label", null, "الكلمة الأصلية"), base, el("label", null, "الإجابات المقبولة (سطر لكل واحدة، حتى اثنتين)"), answers);
+        } else if (qtype === "circle") {
+          options = el("textarea", { style: "min-height:70px" }); options.value = q ? (q.options || []).join("\n") : "";
+          correct = el("input", { type: "number", min: "1" }); correct.value = q ? ((q.options || []).indexOf((q.answers || [])[0]) + 1) : 1;
+          kids.push(el("label", null, "الخيارات (كل خيار في سطر)"), options, el("label", null, "رقم الخيار الصحيح"), correct);
+        } else if (qtype === "truefalse") {
+          tf = el("select", null, el("option", { value: "true" }, "صحيح True"), el("option", { value: "false" }, "خطأ False"));
+          tf.value = q ? (q.answers || [])[0] || "true" : "true";
+          kids.push(el("label", null, "الإجابة الصحيحة"), tf);
+        } else {
+          model = el("textarea", { style: "min-height:50px" }); model.dir = "ltr"; model.value = (q && q.model_text) || "";
+          minc = el("input", { type: "number" }); minc.value = q ? q.min_correct : 2;
+          maxx = el("input", { type: "number" }); maxx.value = q ? q.max_extra : 3;
+          kids.push(el("label", null, "السطر الصحيح من القطعة"), model,
+            el("label", null, "أقل عدد كلمات صحيحة"), minc, el("label", null, "أقصى عدد كلمات من خارج السطر"), maxx);
+        }
+        const points = el("input", { type: "number", step: "0.5", min: "0" }); points.value = q ? q.points : 1;
+        kids.push(el("label", null, "الدرجة"), points);
+        let fileInput = null;
+        if (!fill) {
+          fileInput = el("input", { type: "file", accept: ".pdf,.png,.jpg,.jpeg,.webp" });
+          kids.push(el("label", null, "ملف مرفق (اختياري)"), fileInput);
+        }
+        kids.push(preview);
+        wrap.replaceChildren(...kids);
+        updatePreview();
+        return {
+          node: wrap,
+          getValues: () => ({
+            prompt: prompt.value.trim(), base: base && base.value.trim(), answers: answers && answers.value,
+            options: options && options.value, correct: correct && parseInt(correct.value, 10),
+            tf: tf && tf.value, model: model && model.value.trim(),
+            minc: minc && parseInt(minc.value, 10), maxx: maxx && parseInt(maxx.value, 10),
+            points: parseFloat(points.value) || 0, fileInput, fileVal: q && q.file_url
+          })
+        };
+      }
+    }
+
     await list();
     return box;
   }
+
 
   // ---------- الواجهة الهادئة للمؤسس ----------
   // مشهد عشوائي يُولَّد بأرقام فقط (لا صور خارجية): كثبان عند الغروب، أو النيل، أو ليل صحراوي
